@@ -1,0 +1,1121 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Embedded Documents Examples
+description: Master embedded documents in Adonis ODM with practical examples for nested data structures and complex document modeling
+---
+
+# Embedded Documents Examples
+
+This guide provides practical examples for working with embedded documents in Adonis ODM, demonstrating how to model complex nested data structures effectively.
+
+## E-commerce Order System
+
+### Order with Items and Shipping
+
+```typescript
+// Embedded document classes
+class OrderItem {
+  @column()
+  declare productId: string
+
+  @column()
+  declare productName: string
+
+  @column()
+  declare sku: string
+
+  @column()
+  declare quantity: number
+
+  @column()
+  declare unitPrice: number
+
+  @column()
+  declare totalPrice: number
+
+  @column()
+  declare category: string
+
+  @column()
+  declare attributes: Record<string, any>
+}
+
+class ShippingAddress {
+  @column()
+  declare fullName: string
+
+  @column()
+  declare company?: string
+
+  @column()
+  declare addressLine1: string
+
+  @column()
+  declare addressLine2?: string
+
+  @column()
+  declare city: string
+
+  @column()
+  declare state: string
+
+  @column()
+  declare postalCode: string
+
+  @column()
+  declare country: string
+
+  @column()
+  declare phone?: string
+
+  @column()
+  declare isDefault: boolean
+}
+
+class PaymentInfo {
+  @column()
+  declare method: 'credit_card' | 'paypal' | 'bank_transfer' | 'cash_on_delivery'
+
+  @column()
+  declare transactionId: string
+
+  @column()
+  declare amount: number
+
+  @column()
+  declare currency: string
+
+  @column()
+  declare status: 'pending' | 'completed' | 'failed' | 'refunded'
+
+  @column.dateTime()
+  declare processedAt?: DateTime
+}
+
+// Main Order model
+export default class Order extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare orderNumber: string
+
+  @column()
+  declare customerId: string
+
+  @column()
+  declare status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled'
+
+  // Array of embedded order items
+  @embedded([OrderItem])
+  declare items: OrderItem[]
+
+  // Single embedded shipping address
+  @embedded(ShippingAddress)
+  declare shippingAddress: ShippingAddress
+
+  // Single embedded payment info
+  @embedded(PaymentInfo)
+  declare payment: PaymentInfo
+
+  @column()
+  declare subtotal: number
+
+  @column()
+  declare tax: number
+
+  @column()
+  declare shippingCost: number
+
+  @column()
+  declare total: number
+
+  @column()
+  declare notes?: string
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+
+  @column.dateTime()
+  declare shippedAt?: DateTime
+
+  @column.dateTime()
+  declare deliveredAt?: DateTime
+}
+```
+
+### Creating Orders with Embedded Data
+
+```typescript
+// Create a complete order
+async function createOrder(orderData: {
+  customerId: string
+  items: Array<{
+    productId: string
+    productName: string
+    sku: string
+    quantity: number
+    unitPrice: number
+    category: string
+    attributes?: Record<string, any>
+  }>
+  shippingAddress: {
+    fullName: string
+    addressLine1: string
+    city: string
+    state: string
+    postalCode: string
+    country: string
+    phone?: string
+  }
+  paymentMethod: string
+  notes?: string
+}) {
+  // Calculate totals
+  const items = orderData.items.map(item => ({
+    ...item,
+    totalPrice: item.quantity * item.unitPrice,
+    attributes: item.attributes || {}
+  }))
+
+  const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0)
+  const tax = subtotal * 0.08 // 8% tax
+  const shippingCost = subtotal > 100 ? 0 : 15 // Free shipping over $100
+  const total = subtotal + tax + shippingCost
+
+  // Generate order number
+  const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+
+  const order = await Order.create({
+    orderNumber,
+    customerId: orderData.customerId,
+    status: 'pending',
+    items,
+    shippingAddress: {
+      ...orderData.shippingAddress,
+      isDefault: false
+    },
+    payment: {
+      method: orderData.paymentMethod as any,
+      transactionId: `TXN-${Date.now()}`,
+      amount: total,
+      currency: 'USD',
+      status: 'pending'
+    },
+    subtotal,
+    tax,
+    shippingCost,
+    total,
+    notes: orderData.notes
+  })
+
+  console.log(`Order ${order.orderNumber} created with ${items.length} items`)
+  return order
+}
+
+// Usage
+const newOrder = await createOrder({
+  customerId: 'customer123',
+  items: [
+    {
+      productId: 'prod1',
+      productName: 'Wireless Headphones',
+      sku: 'WH-001',
+      quantity: 1,
+      unitPrice: 199.99,
+      category: 'Electronics',
+      attributes: { color: 'Black', warranty: '2 years' }
+    },
+    {
+      productId: 'prod2',
+      productName: 'Phone Case',
+      sku: 'PC-002',
+      quantity: 2,
+      unitPrice: 24.99,
+      category: 'Accessories'
+    }
+  ],
+  shippingAddress: {
+    fullName: 'John Doe',
+    addressLine1: '123 Main Street',
+    city: 'New York',
+    state: 'NY',
+    postalCode: '10001',
+    country: 'USA',
+    phone: '+1-555-0123'
+  },
+  paymentMethod: 'credit_card',
+  notes: 'Please handle with care'
+})
+```
+
+### Querying Orders with Embedded Data
+
+```typescript
+// Find orders by item category
+async function findOrdersByCategory(category: string) {
+  return await Order.query()
+    .whereEmbedded('items', (query) => {
+      query.where('category', category)
+    })
+    .preload('customer')
+    .orderBy('createdAt', 'desc')
+    .all()
+}
+
+// Find orders by shipping location
+async function findOrdersByLocation(state: string, city?: string) {
+  const query = Order.query()
+    .where('shippingAddress.state', state)
+
+  if (city) {
+    query.where('shippingAddress.city', city)
+  }
+
+  return await query
+    .select('orderNumber', 'total', 'status', 'shippingAddress', 'createdAt')
+    .orderBy('createdAt', 'desc')
+    .all()
+}
+
+// Find high-value orders with specific payment methods
+async function findHighValueOrders(minAmount: number, paymentMethods: string[]) {
+  return await Order.query()
+    .where('total', '>=', minAmount)
+    .whereIn('payment.method', paymentMethods)
+    .where('payment.status', 'completed')
+    .orderBy('total', 'desc')
+    .all()
+}
+
+// Complex order analytics
+async function getOrderAnalytics(dateRange: { start: Date, end: Date }) {
+  const analytics = await Order.query()
+    .aggregate([
+      // Match orders in date range
+      {
+        $match: {
+          createdAt: {
+            $gte: dateRange.start,
+            $lte: dateRange.end
+          }
+        }
+      },
+      
+      // Unwind items for item-level analysis
+      { $unwind: '$items' },
+      
+      // Group by category and payment method
+      {
+        $group: {
+          _id: {
+            category: '$items.category',
+            paymentMethod: '$payment.method',
+            status: '$status'
+          },
+          orderCount: { $sum: 1 },
+          totalRevenue: { $sum: '$total' },
+          avgOrderValue: { $avg: '$total' },
+          totalQuantity: { $sum: '$items.quantity' },
+          uniqueProducts: { $addToSet: '$items.productId' }
+        }
+      },
+      
+      // Add computed fields
+      {
+        $addFields: {
+          uniqueProductCount: { $size: '$uniqueProducts' }
+        }
+      },
+      
+      // Sort by revenue
+      { $sort: { totalRevenue: -1 } }
+    ])
+
+  return analytics
+}
+
+// Usage
+const electronics = await findOrdersByCategory('Electronics')
+const nyOrders = await findOrdersByLocation('NY', 'New York')
+const highValueOrders = await findHighValueOrders(500, ['credit_card', 'paypal'])
+
+const analytics = await getOrderAnalytics({
+  start: new Date('2024-01-01'),
+  end: new Date('2024-12-31')
+})
+```
+
+## User Profile System
+
+### Comprehensive User Profile
+
+```typescript
+// Contact information
+class ContactInfo {
+  @column()
+  declare email: string
+
+  @column()
+  declare phone?: string
+
+  @column()
+  declare alternateEmail?: string
+
+  @column()
+  declare preferredContact: 'email' | 'phone' | 'sms'
+}
+
+// Social media links
+class SocialLinks {
+  @column()
+  declare twitter?: string
+
+  @column()
+  declare linkedin?: string
+
+  @column()
+  declare github?: string
+
+  @column()
+  declare website?: string
+
+  @column()
+  declare instagram?: string
+}
+
+// Work experience entry
+class WorkExperience {
+  @column()
+  declare company: string
+
+  @column()
+  declare position: string
+
+  @column()
+  declare description: string
+
+  @column()
+  declare startDate: Date
+
+  @column()
+  declare endDate?: Date
+
+  @column()
+  declare isCurrent: boolean
+
+  @column()
+  declare skills: string[]
+}
+
+// Education entry
+class Education {
+  @column()
+  declare institution: string
+
+  @column()
+  declare degree: string
+
+  @column()
+  declare field: string
+
+  @column()
+  declare graduationYear: number
+
+  @column()
+  declare gpa?: number
+
+  @column()
+  declare honors?: string[]
+}
+
+// User preferences
+class UserPreferences {
+  @column()
+  declare theme: 'light' | 'dark' | 'auto'
+
+  @column()
+  declare language: string
+
+  @column()
+  declare timezone: string
+
+  @column()
+  declare emailNotifications: boolean
+
+  @column()
+  declare pushNotifications: boolean
+
+  @column()
+  declare marketingEmails: boolean
+
+  @column()
+  declare profileVisibility: 'public' | 'private' | 'connections'
+}
+
+// Main User Profile model
+export default class UserProfile extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare userId: string
+
+  @column()
+  declare firstName: string
+
+  @column()
+  declare lastName: string
+
+  @column()
+  declare displayName: string
+
+  @column()
+  declare bio: string
+
+  @column()
+  declare avatar?: string
+
+  @column()
+  declare coverImage?: string
+
+  @column()
+  declare location: string
+
+  @column()
+  declare birthDate?: Date
+
+  // Embedded contact information
+  @embedded(ContactInfo)
+  declare contact: ContactInfo
+
+  // Embedded social links
+  @embedded(SocialLinks)
+  declare social: SocialLinks
+
+  // Array of work experiences
+  @embedded([WorkExperience])
+  declare workExperience: WorkExperience[]
+
+  // Array of education entries
+  @embedded([Education])
+  declare education: Education[]
+
+  // User preferences
+  @embedded(UserPreferences)
+  declare preferences: UserPreferences
+
+  @column()
+  declare skills: string[]
+
+  @column()
+  declare interests: string[]
+
+  @column()
+  declare languages: string[]
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+```
+
+### Profile Management Operations
+
+```typescript
+// Create comprehensive user profile
+async function createUserProfile(userId: string, profileData: {
+  firstName: string
+  lastName: string
+  bio: string
+  location: string
+  contact: {
+    email: string
+    phone?: string
+    preferredContact: 'email' | 'phone' | 'sms'
+  }
+  social?: {
+    twitter?: string
+    linkedin?: string
+    github?: string
+  }
+  skills?: string[]
+  interests?: string[]
+}) {
+  const profile = await UserProfile.create({
+    userId,
+    firstName: profileData.firstName,
+    lastName: profileData.lastName,
+    displayName: `${profileData.firstName} ${profileData.lastName}`,
+    bio: profileData.bio,
+    location: profileData.location,
+    contact: {
+      ...profileData.contact,
+      alternateEmail: undefined
+    },
+    social: profileData.social || {},
+    workExperience: [],
+    education: [],
+    preferences: {
+      theme: 'light',
+      language: 'en',
+      timezone: 'UTC',
+      emailNotifications: true,
+      pushNotifications: true,
+      marketingEmails: false,
+      profileVisibility: 'public'
+    },
+    skills: profileData.skills || [],
+    interests: profileData.interests || [],
+    languages: ['English']
+  })
+
+  return profile
+}
+
+// Add work experience
+async function addWorkExperience(userId: string, experience: {
+  company: string
+  position: string
+  description: string
+  startDate: Date
+  endDate?: Date
+  isCurrent: boolean
+  skills: string[]
+}) {
+  const profile = await UserProfile.query()
+    .where('userId', userId)
+    .firstOrFail()
+
+  // Add new experience to the beginning of the array
+  profile.workExperience.unshift(experience)
+
+  // Update current status of other experiences if this is current
+  if (experience.isCurrent) {
+    profile.workExperience.forEach((exp, index) => {
+      if (index > 0) exp.isCurrent = false
+    })
+  }
+
+  await profile.save()
+  return profile
+}
+
+// Update user preferences
+async function updateUserPreferences(userId: string, preferences: Partial<UserPreferences>) {
+  const profile = await UserProfile.query()
+    .where('userId', userId)
+    .firstOrFail()
+
+  // Merge with existing preferences
+  profile.preferences = {
+    ...profile.preferences,
+    ...preferences
+  }
+
+  await profile.save()
+  return profile
+}
+
+// Search profiles by skills and experience
+async function searchProfilesBySkills(skills: string[], location?: string) {
+  const query = UserProfile.query()
+    .whereArrayContainsAny('skills', skills)
+    .where('preferences.profileVisibility', 'public')
+
+  if (location) {
+    query.where('location', 'like', `%${location}%`)
+  }
+
+  // Also search in work experience skills
+  query.orWhereEmbedded('workExperience', (expQuery) => {
+    expQuery.whereArrayContainsAny('skills', skills)
+  })
+
+  return await query
+    .select('displayName', 'bio', 'location', 'skills', 'avatar')
+    .orderBy('updatedAt', 'desc')
+    .all()
+}
+```
+
+## Blog System with Comments
+
+### Blog Post with Nested Comments
+
+```typescript
+// Comment author info
+class CommentAuthor {
+  @column()
+  declare userId?: string
+
+  @column()
+  declare name: string
+
+  @column()
+  declare email: string
+
+  @column()
+  declare avatar?: string
+
+  @column()
+  declare isRegistered: boolean
+}
+
+// Individual comment
+class Comment {
+  @column()
+  declare _id: string
+
+  @embedded(CommentAuthor)
+  declare author: CommentAuthor
+
+  @column()
+  declare content: string
+
+  @column()
+  declare isApproved: boolean
+
+  @column()
+  declare likes: number
+
+  @column()
+  declare parentId?: string // For nested replies
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+
+// Post metadata
+class PostMetadata {
+  @column()
+  declare readingTime: number // in minutes
+
+  @column()
+  declare wordCount: number
+
+  @column()
+  declare featuredImage?: string
+
+  @column()
+  declare excerpt: string
+
+  @column()
+  declare seoTitle?: string
+
+  @column()
+  declare seoDescription?: string
+
+  @column()
+  declare canonicalUrl?: string
+}
+
+// Blog post model
+export default class BlogPost extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare title: string
+
+  @column()
+  declare slug: string
+
+  @column()
+  declare content: string
+
+  @column()
+  declare authorId: string
+
+  @column()
+  declare status: 'draft' | 'published' | 'archived'
+
+  @column()
+  declare tags: string[]
+
+  @column()
+  declare categories: string[]
+
+  // Embedded metadata
+  @embedded(PostMetadata)
+  declare metadata: PostMetadata
+
+  // Array of embedded comments
+  @embedded([Comment])
+  declare comments: Comment[]
+
+  @column()
+  declare viewCount: number
+
+  @column()
+  declare likeCount: number
+
+  @column.dateTime()
+  declare publishedAt?: DateTime
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+```
+
+### Comment Management
+
+```typescript
+// Add comment to blog post
+async function addComment(postId: string, commentData: {
+  author: {
+    userId?: string
+    name: string
+    email: string
+    avatar?: string
+  }
+  content: string
+  parentId?: string
+}) {
+  const post = await BlogPost.findOrFail(postId)
+
+  const newComment = {
+    _id: new ObjectId().toString(),
+    author: {
+      ...commentData.author,
+      isRegistered: !!commentData.author.userId
+    },
+    content: commentData.content,
+    isApproved: false, // Require moderation
+    likes: 0,
+    parentId: commentData.parentId,
+    createdAt: DateTime.now(),
+    updatedAt: DateTime.now()
+  }
+
+  post.comments.push(newComment)
+  await post.save()
+
+  return newComment
+}
+
+// Get comments with nested structure
+async function getCommentsWithReplies(postId: string) {
+  const post = await BlogPost.query()
+    .select('comments')
+    .where('_id', postId)
+    .firstOrFail()
+
+  // Organize comments into nested structure
+  const commentMap = new Map()
+  const rootComments = []
+
+  // First pass: create map of all comments
+  post.comments.forEach(comment => {
+    commentMap.set(comment._id, { ...comment, replies: [] })
+  })
+
+  // Second pass: organize into tree structure
+  post.comments.forEach(comment => {
+    if (comment.parentId) {
+      const parent = commentMap.get(comment.parentId)
+      if (parent) {
+        parent.replies.push(commentMap.get(comment._id))
+      }
+    } else {
+      rootComments.push(commentMap.get(comment._id))
+    }
+  })
+
+  return rootComments
+}
+
+// Moderate comments
+async function moderateComments(postId: string, commentIds: string[], action: 'approve' | 'reject') {
+  const post = await BlogPost.findOrFail(postId)
+
+  post.comments.forEach(comment => {
+    if (commentIds.includes(comment._id)) {
+      if (action === 'approve') {
+        comment.isApproved = true
+      } else {
+        // Remove rejected comments
+        const index = post.comments.indexOf(comment)
+        if (index > -1) {
+          post.comments.splice(index, 1)
+        }
+      }
+    }
+  })
+
+  await post.save()
+  return post
+}
+
+// Search posts with comment analysis
+async function getPostsWithCommentStats() {
+  return await BlogPost.query()
+    .aggregate([
+      { $match: { status: 'published' } },
+      
+      // Add comment statistics
+      {
+        $addFields: {
+          totalComments: { $size: '$comments' },
+          approvedComments: {
+            $size: {
+              $filter: {
+                input: '$comments',
+                cond: { $eq: ['$$this.isApproved', true] }
+              }
+            }
+          },
+          pendingComments: {
+            $size: {
+              $filter: {
+                input: '$comments',
+                cond: { $eq: ['$$this.isApproved', false] }
+              }
+            }
+          },
+          uniqueCommenters: {
+            $size: {
+              $setUnion: {
+                $map: {
+                  input: '$comments',
+                  as: 'comment',
+                  in: '$$comment.author.email'
+                }
+              }
+            }
+          }
+        }
+      },
+      
+      // Project relevant fields
+      {
+        $project: {
+          title: 1,
+          slug: 1,
+          authorId: 1,
+          viewCount: 1,
+          likeCount: 1,
+          totalComments: 1,
+          approvedComments: 1,
+          pendingComments: 1,
+          uniqueCommenters: 1,
+          publishedAt: 1,
+          'metadata.readingTime': 1
+        }
+      },
+      
+      // Sort by engagement
+      {
+        $sort: {
+          totalComments: -1,
+          viewCount: -1
+        }
+      }
+    ])
+}
+```
+
+## Configuration and Settings
+
+### Application Settings with Nested Configuration
+
+```typescript
+// Feature flags
+class FeatureFlags {
+  @column()
+  declare enableComments: boolean
+
+  @column()
+  declare enableRegistration: boolean
+
+  @column()
+  declare enableSocialLogin: boolean
+
+  @column()
+  declare enablePayments: boolean
+
+  @column()
+  declare maintenanceMode: boolean
+}
+
+// Email settings
+class EmailSettings {
+  @column()
+  declare provider: 'smtp' | 'sendgrid' | 'mailgun' | 'ses'
+
+  @column()
+  declare fromEmail: string
+
+  @column()
+  declare fromName: string
+
+  @column()
+  declare replyToEmail: string
+
+  @column()
+  declare smtpHost?: string
+
+  @column()
+  declare smtpPort?: number
+
+  @column()
+  declare smtpUsername?: string
+
+  @column()
+  declare smtpPassword?: string
+
+  @column()
+  declare apiKey?: string
+}
+
+// Payment settings
+class PaymentSettings {
+  @column()
+  declare enabledProviders: string[]
+
+  @column()
+  declare defaultCurrency: string
+
+  @column()
+  declare taxRate: number
+
+  @column()
+  declare freeShippingThreshold: number
+
+  @column()
+  declare stripePublicKey?: string
+
+  @column()
+  declare stripeSecretKey?: string
+
+  @column()
+  declare paypalClientId?: string
+
+  @column()
+  declare paypalClientSecret?: string
+}
+
+// Application settings model
+export default class AppSettings extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare siteName: string
+
+  @column()
+  declare siteDescription: string
+
+  @column()
+  declare siteUrl: string
+
+  @column()
+  declare adminEmail: string
+
+  @column()
+  declare timezone: string
+
+  @column()
+  declare language: string
+
+  // Embedded feature flags
+  @embedded(FeatureFlags)
+  declare features: FeatureFlags
+
+  // Embedded email settings
+  @embedded(EmailSettings)
+  declare email: EmailSettings
+
+  // Embedded payment settings
+  @embedded(PaymentSettings)
+  declare payments: PaymentSettings
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+
+  // Singleton pattern - only one settings document
+  static async getInstance() {
+    let settings = await this.query().first()
+    
+    if (!settings) {
+      settings = await this.create({
+        siteName: 'My Application',
+        siteDescription: 'A great application built with Adonis ODM',
+        siteUrl: 'https://example.com',
+        adminEmail: 'admin@example.com',
+        timezone: 'UTC',
+        language: 'en',
+        features: {
+          enableComments: true,
+          enableRegistration: true,
+          enableSocialLogin: false,
+          enablePayments: false,
+          maintenanceMode: false
+        },
+        email: {
+          provider: 'smtp',
+          fromEmail: 'noreply@example.com',
+          fromName: 'My Application',
+          replyToEmail: 'support@example.com'
+        },
+        payments: {
+          enabledProviders: [],
+          defaultCurrency: 'USD',
+          taxRate: 0.08,
+          freeShippingThreshold: 100
+        }
+      })
+    }
+    
+    return settings
+  }
+}
+
+// Settings management
+async function updateSettings(updates: any) {
+  const settings = await AppSettings.getInstance()
+  
+  // Deep merge updates
+  Object.keys(updates).forEach(key => {
+    if (typeof updates[key] === 'object' && !Array.isArray(updates[key])) {
+      settings[key] = { ...settings[key], ...updates[key] }
+    } else {
+      settings[key] = updates[key]
+    }
+  })
+  
+  await settings.save()
+  return settings
+}
+
+// Usage
+const settings = await updateSettings({
+  siteName: 'Updated Site Name',
+  features: {
+    enablePayments: true,
+    maintenanceMode: false
+  },
+  payments: {
+    enabledProviders: ['stripe', 'paypal'],
+    stripePublicKey: 'pk_test_...'
+  }
+})
+```
+
+## Next Steps
+
+- **[Transactions](/examples/transactions)** - Managing data consistency with embedded documents
+- **[Basic Usage](/examples/basic-usage)** - Fundamental Adonis ODM concepts
+- **[Embedded Documents Guide](/docs/embedded-documents)** - Complete embedded documents reference
+- **[Advanced Queries](/examples/advanced-queries)** - Complex query patterns

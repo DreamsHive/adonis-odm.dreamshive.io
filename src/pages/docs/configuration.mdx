@@ -1,0 +1,410 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Configuration
+description: Learn how to configure Adonis ODM for your MongoDB connections and application needs
+---
+
+# Configuration
+
+Adonis ODM provides flexible configuration options to connect to MongoDB databases and customize the ODM behavior for your application needs.
+
+## Configuration File
+
+The main configuration file is located at `config/odm.ts`. This file is created automatically when you run the configure command:
+
+```typescript
+import env from '#start/env'
+import { defineConfig } from 'adonis-odm'
+
+const odmConfig = defineConfig({
+  connection: 'mongodb',
+
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        // Connection options
+      },
+    },
+  },
+})
+
+export default odmConfig
+```
+
+## Connection Configuration
+
+### Basic Connection
+
+The simplest way to configure a connection is using a MongoDB URI:
+
+```typescript
+const odmConfig = defineConfig({
+  connection: 'mongodb',
+
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_URI'),
+      },
+    },
+  },
+})
+```
+
+### Individual Components
+
+You can also specify connection components individually:
+
+```typescript
+const odmConfig = defineConfig({
+  connection: 'mongodb',
+
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        host: env.get('MONGO_HOST', 'localhost'),
+        port: env.get('MONGO_PORT', 27017),
+        database: env.get('MONGO_DATABASE'),
+        username: env.get('MONGO_USERNAME'),
+        password: env.get('MONGO_PASSWORD'),
+      },
+    },
+  },
+})
+```
+
+## Connection Options
+
+MongoDB driver options can be specified in the `options` object:
+
+```typescript
+const odmConfig = defineConfig({
+  connection: 'mongodb',
+
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_URI'),
+        options: {
+          // Connection pool settings
+          maxPoolSize: env.get('MONGO_MAX_POOL_SIZE', 10),
+          minPoolSize: env.get('MONGO_MIN_POOL_SIZE', 0),
+          maxIdleTimeMS: env.get('MONGO_MAX_IDLE_TIME_MS', 30000),
+          
+          // Timeout settings
+          serverSelectionTimeoutMS: env.get('MONGO_SERVER_SELECTION_TIMEOUT_MS', 5000),
+          socketTimeoutMS: env.get('MONGO_SOCKET_TIMEOUT_MS', 0),
+          connectTimeoutMS: env.get('MONGO_CONNECT_TIMEOUT_MS', 10000),
+          
+          // Authentication
+          authSource: env.get('MONGO_AUTH_SOURCE', 'admin'),
+          
+          // SSL/TLS
+          ssl: env.get('MONGO_SSL', false),
+          sslValidate: env.get('MONGO_SSL_VALIDATE', true),
+          
+          // Read preferences
+          readPreference: env.get('MONGO_READ_PREFERENCE', 'primary'),
+          
+          // Write concern
+          w: env.get('MONGO_WRITE_CONCERN', 'majority'),
+          wtimeout: env.get('MONGO_WRITE_TIMEOUT', 5000),
+          
+          // Read concern
+          readConcern: {
+            level: env.get('MONGO_READ_CONCERN', 'majority')
+          },
+        },
+      },
+    },
+  },
+})
+```
+
+## Multiple Connections
+
+You can configure multiple MongoDB connections for different purposes:
+
+```typescript
+const odmConfig = defineConfig({
+  connection: 'primary',
+
+  connections: {
+    primary: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_PRIMARY_URI'),
+        options: {
+          maxPoolSize: 20,
+          readPreference: 'primary',
+        },
+      },
+    },
+
+    analytics: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_ANALYTICS_URI'),
+        options: {
+          maxPoolSize: 5,
+          readPreference: 'secondary',
+        },
+      },
+    },
+
+    cache: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_CACHE_URI'),
+        options: {
+          maxPoolSize: 10,
+          w: 1, // Faster writes for cache
+        },
+      },
+    },
+  },
+})
+```
+
+### Using Different Connections in Models
+
+Specify which connection a model should use:
+
+```typescript
+export default class User extends BaseModel {
+  static connection = 'primary'
+  
+  // Model definition...
+}
+
+export default class AnalyticsEvent extends BaseModel {
+  static connection = 'analytics'
+  
+  // Model definition...
+}
+```
+
+## Environment Variables
+
+### Required Variables
+
+```env
+# Database connection
+MONGO_DATABASE=your_database_name
+
+# Either use a full URI
+MONGO_URI=mongodb://localhost:27017/your_database_name
+
+# Or individual components
+MONGO_HOST=localhost
+MONGO_PORT=27017
+MONGO_USERNAME=your_username
+MONGO_PASSWORD=your_password
+```
+
+### Optional Variables
+
+```env
+# Connection pool settings
+MONGO_MAX_POOL_SIZE=10
+MONGO_MIN_POOL_SIZE=0
+MONGO_MAX_IDLE_TIME_MS=30000
+
+# Timeout settings
+MONGO_SERVER_SELECTION_TIMEOUT_MS=5000
+MONGO_SOCKET_TIMEOUT_MS=0
+MONGO_CONNECT_TIMEOUT_MS=10000
+
+# Authentication
+MONGO_AUTH_SOURCE=admin
+
+# SSL/TLS
+MONGO_SSL=false
+MONGO_SSL_VALIDATE=true
+
+# Read/Write preferences
+MONGO_READ_PREFERENCE=primary
+MONGO_WRITE_CONCERN=majority
+MONGO_WRITE_TIMEOUT=5000
+MONGO_READ_CONCERN=majority
+```
+
+## Connection URI Formats
+
+### Local Development
+```
+mongodb://localhost:27017/myapp
+```
+
+### With Authentication
+```
+mongodb://username:password@localhost:27017/myapp
+```
+
+### MongoDB Atlas
+```
+mongodb+srv://username:password@cluster.mongodb.net/myapp
+```
+
+### Replica Set
+```
+mongodb://host1:27017,host2:27017,host3:27017/myapp?replicaSet=myReplicaSet
+```
+
+### With Options
+```
+mongodb://username:password@host:27017/myapp?authSource=admin&ssl=true&readPreference=secondary
+```
+
+## Advanced Configuration
+
+### Custom Naming Strategy
+
+Define how model and field names are converted to database names:
+
+```typescript
+import { CamelCaseNamingStrategy } from 'adonis-odm'
+
+class CustomNamingStrategy extends CamelCaseNamingStrategy {
+  tableName(model: typeof BaseModel): string {
+    return `app_${super.tableName(model)}`
+  }
+  
+  columnName(model: typeof BaseModel, propertyName: string): string {
+    return super.columnName(model, propertyName)
+  }
+}
+
+const odmConfig = defineConfig({
+  // ... other config
+  namingStrategy: new CustomNamingStrategy(),
+})
+```
+
+### Global Query Timeout
+
+Set a default timeout for all queries:
+
+```typescript
+const odmConfig = defineConfig({
+  // ... other config
+  globalQueryTimeout: 30000, // 30 seconds
+})
+```
+
+### Debug Mode
+
+Enable query logging for development:
+
+```typescript
+const odmConfig = defineConfig({
+  // ... other config
+  debug: env.get('NODE_ENV') === 'development',
+})
+```
+
+## Production Considerations
+
+### Connection Pool Sizing
+
+For production applications, configure appropriate pool sizes:
+
+```typescript
+const odmConfig = defineConfig({
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_URI'),
+        options: {
+          maxPoolSize: 50,        // Increase for high traffic
+          minPoolSize: 5,         // Maintain minimum connections
+          maxIdleTimeMS: 30000,   // Close idle connections
+        },
+      },
+    },
+  },
+})
+```
+
+### Read/Write Separation
+
+Use read replicas for better performance:
+
+```typescript
+const odmConfig = defineConfig({
+  connections: {
+    primary: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_PRIMARY_URI'),
+        options: {
+          readPreference: 'primary',
+          w: 'majority',
+        },
+      },
+    },
+    
+    readonly: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_READONLY_URI'),
+        options: {
+          readPreference: 'secondaryPreferred',
+        },
+      },
+    },
+  },
+})
+```
+
+### SSL/TLS Configuration
+
+For secure connections in production:
+
+```typescript
+const odmConfig = defineConfig({
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_URI'),
+        options: {
+          ssl: true,
+          sslValidate: true,
+          sslCA: env.get('MONGO_SSL_CA'),
+          sslCert: env.get('MONGO_SSL_CERT'),
+          sslKey: env.get('MONGO_SSL_KEY'),
+        },
+      },
+    },
+  },
+})
+```
+
+## Validation
+
+Environment variable validation is automatically set up when you run the configure command. The validation rules are added to your `start/env.ts` file:
+
+```typescript
+export default await Env.create(new URL('../', import.meta.url), {
+  // ... other validations
+  MONGO_HOST: Env.schema.string({ format: 'host' }),
+  MONGO_PORT: Env.schema.number(),
+  MONGO_DATABASE: Env.schema.string(),
+  MONGO_URI: Env.schema.string.optional(),
+  // ... other MongoDB variables
+})
+```
+
+## Next Steps
+
+Now that you have Adonis ODM configured:
+
+1. **[Learn about Commands](/docs/commands)** - Explore available ace commands
+2. **[Create Your First Model](/docs/models)** - Start defining your data models
+3. **[Start Querying](/docs/query-builder)** - Learn the query builder API

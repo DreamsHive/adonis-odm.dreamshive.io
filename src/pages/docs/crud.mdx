@@ -1,0 +1,325 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: CRUD Operations
+description: Learn how to create, read, update, and delete records with Adonis ODM
+---
+
+# CRUD Operations
+
+Adonis ODM provides a familiar interface for performing Create, Read, Update, and Delete operations on your MongoDB collections.
+
+## Creating Records
+
+### Method 1: Using `.create()` (Recommended)
+
+```typescript
+// Create a single user (no need for 'new')
+const user = await User.create({
+  name: 'John Doe',
+  email: 'john@example.com',
+  age: 30,
+})
+
+// Create multiple users
+const users = await User.createMany([
+  { name: 'Jane Smith', email: 'jane@example.com', age: 25 },
+  { name: 'Bob Johnson', email: 'bob@example.com', age: 35 },
+])
+```
+
+### Method 2: Using `new` + `.save()`
+
+```typescript
+const user = new User()
+
+// Assign properties
+user.name = 'John Doe'
+user.email = 'john@example.com'
+user.age = 30
+
+// Insert to the database
+await user.save()
+```
+
+### Create or Update
+
+```typescript
+const user = await User.updateOrCreate(
+  { email: 'john@example.com' },
+  { name: 'John Doe Updated', age: 32 }
+)
+```
+
+## Reading Records
+
+### Find by ID
+
+```typescript
+const user = await User.find('507f1f77bcf86cd799439011')
+const userOrFail = await User.findOrFail('507f1f77bcf86cd799439011')
+```
+
+### Find by Field
+
+```typescript
+const user = await User.findBy('email', 'john@example.com')
+const userOrFail = await User.findByOrFail('email', 'john@example.com')
+```
+
+### Get First Record
+
+```typescript
+const user = await User.first()
+const userOrFail = await User.firstOrFail()
+```
+
+### Get All Records
+
+```typescript
+const users = await User.all()
+```
+
+### Using Query Builder
+
+```typescript
+// Simple where clause
+const adults = await User.query().where('age', '>=', 18).all()
+
+// Multiple conditions
+const users = await User.query()
+  .where('age', '>=', 18)
+  .where('email', 'like', '%@gmail.com')
+  .all()
+
+// OR conditions
+const users = await User.query()
+  .where('age', '>=', 18)
+  .orWhere('email', 'admin@example.com')
+  .all()
+```
+
+## Updating Records
+
+### Method 1: Direct property assignment + save
+
+```typescript
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+
+user.name = 'Updated Name'
+user.age = 31
+
+await user.save()
+```
+
+### Method 2: Using `.merge()` + `.save()` (Method chaining)
+
+```typescript
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+
+await user.merge({ name: 'Updated Name', age: 31 }).save()
+```
+
+### Method 3: Using query builder `.update()` (Bulk update)
+
+```typescript
+// Update multiple records at once
+await User.query().where('age', '>=', 18).update({ status: 'adult' })
+```
+
+## Deleting Records
+
+### Method 1: Instance delete
+
+```typescript
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+await user.delete()
+```
+
+### Method 2: Query builder bulk delete
+
+```typescript
+// Delete multiple records at once
+await User.query().where('isVerified', false).delete()
+```
+
+## Advanced Query Operations
+
+### Null Checks
+
+```typescript
+const users = await User.query().whereNull('deletedAt').all()
+const users = await User.query().whereNotNull('emailVerifiedAt').all()
+```
+
+### In/Not in Arrays
+
+```typescript
+const users = await User.query().whereIn('status', ['active', 'pending']).all()
+const users = await User.query()
+  .whereNotIn('role', ['admin', 'moderator'])
+  .all()
+```
+
+### Between Values
+
+```typescript
+const users = await User.query().whereBetween('age', [18, 65]).all()
+const users = await User.query().whereNotBetween('age', [13, 17]).all()
+```
+
+### Pattern Matching
+
+```typescript
+const users = await User.query().where('name', 'like', 'John%').all()
+const users = await User.query().whereLike('name', 'John%').all() // Case-sensitive
+const users = await User.query().whereILike('name', 'john%').all() // Case-insensitive
+```
+
+### Field Existence
+
+```typescript
+const users = await User.query().whereExists('profilePicture').all()
+const users = await User.query().whereNotExists('deletedAt').all()
+```
+
+### Negation Queries
+
+```typescript
+const users = await User.query().whereNot('status', 'banned').all()
+const users = await User.query().whereNot('age', '<', 18).all()
+```
+
+### Sorting and Limiting
+
+```typescript
+// Sorting
+const users = await User.query()
+  .orderBy('createdAt', 'desc')
+  .orderBy('name', 'asc')
+  .all()
+
+// Limiting and pagination
+const users = await User.query().limit(10).skip(20).all()
+const users = await User.query().offset(20).limit(10).all() // offset is alias for skip
+const users = await User.query().forPage(3, 10).all() // page 3, 10 per page
+```
+
+### Field Selection
+
+```typescript
+const users = await User.query().select(['name', 'email']).all()
+```
+
+### Distinct Values
+
+```typescript
+const uniqueRoles = await User.query().distinct('role').all()
+```
+
+## Pagination
+
+```typescript
+const paginatedUsers = await User.query()
+  .orderBy('createdAt', 'desc')
+  .paginate(1, 10) // page 1, 10 per page
+
+console.log(paginatedUsers.data) // Array of users
+console.log(paginatedUsers.meta) // Pagination metadata
+```
+
+## Aggregation
+
+```typescript
+// Count records
+const userCount = await User.query().where('age', '>=', 18).count()
+
+// Get IDs only
+const userIds = await User.query().where('status', 'active').ids()
+
+// Delete multiple records
+const deletedCount = await User.query().where('status', 'inactive').delete()
+
+// Update multiple records
+const updatedCount = await User.query()
+  .where('age', '>=', 18)
+  .update({ status: 'adult' })
+```
+
+## Query Operators
+
+The ODM supports both MongoDB operators and mathematical symbols:
+
+```typescript
+// Mathematical symbols (more intuitive)
+User.query().where('age', '>=', 18)
+User.query().where('score', '>', 100)
+User.query().where('status', '!=', 'inactive')
+
+// MongoDB operators
+User.query().where('age', 'gte', 18)
+User.query().where('score', 'gt', 100)
+User.query().where('status', 'ne', 'inactive')
+```
+
+### Supported Operators
+
+- `=`, `eq` - Equal
+- `!=`, `ne` - Not equal
+- `>`, `gt` - Greater than
+- `>=`, `gte` - Greater than or equal
+- `<`, `lt` - Less than
+- `<=`, `lte` - Less than or equal
+- `in` - In array
+- `nin` - Not in array
+- `exists` - Field exists
+- `regex` - Regular expression
+- `like` - Pattern matching with % wildcards
+
+## Bulk Operations
+
+### Bulk Create
+
+```typescript
+const users = await User.createMany([
+  { name: 'User 1', email: 'user1@example.com' },
+  { name: 'User 2', email: 'user2@example.com' },
+  { name: 'User 3', email: 'user3@example.com' },
+])
+```
+
+### Bulk Update
+
+```typescript
+const updateCount = await User.query()
+  .where('isActive', false)
+  .update({ status: 'inactive' })
+```
+
+### Bulk Delete
+
+```typescript
+const deleteCount = await User.query()
+  .where('lastLoginAt', '<', DateTime.now().minus({ months: 6 }))
+  .delete()
+```
+
+### Bulk Upsert
+
+```typescript
+const results = await User.updateOrCreateMany(
+  'email', // Key field
+  [
+    { email: 'user1@example.com', name: 'Updated User 1' },
+    { email: 'user4@example.com', name: 'New User 4' },
+  ]
+)
+```
+
+## Next Steps
+
+Now that you understand CRUD operations:
+
+1. **[Learn about Query Builder](/docs/query-builder)** - Build complex queries
+2. **[Work with Relationships](/docs/relationships)** - Define model relationships
+3. **[Use Embedded Documents](/docs/embedded-documents)** - Work with nested data
+4. **[Handle Transactions](/docs/transactions)** - Ensure data consistency

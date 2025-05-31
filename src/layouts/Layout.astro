@@ -1,0 +1,143 @@
+---
+export interface Props {
+  title: string;
+  description?: string;
+  image?: string;
+}
+
+const { title, description = "MongoDB ODM for AdonisJS v6 - A familiar Lucid ORM-like interface for MongoDB", image = "/og-image.png" } = Astro.props;
+const baseURL = Astro.site || 'http://localhost:4321';
+const canonicalURL = new URL(Astro.url.pathname, baseURL);
+const imageURL = image.startsWith('http') ? image : new URL(image, baseURL);
+---
+
+<!doctype html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content={description} />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href={canonicalURL} />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={Astro.url} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={imageURL} />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content={Astro.url} />
+    <meta property="twitter:title" content={title} />
+    <meta property="twitter:description" content={description} />
+    <meta property="twitter:image" content={imageURL} />
+
+    <!-- Preload fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <title>{title}</title>
+  </head>
+  <body class="h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans antialiased">
+    <slot />
+
+    <!-- Theme toggle script -->
+    <script>
+      // Theme toggle functionality
+      function initTheme() {
+        const theme = localStorage.getItem('theme') ||
+          (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+
+        return theme;
+      }
+
+      function toggleTheme() {
+        const isDark = document.documentElement.classList.contains('dark');
+        const newTheme = isDark ? 'light' : 'dark';
+
+        if (newTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+
+        localStorage.setItem('theme', newTheme);
+
+        // Dispatch custom event for components that need to react to theme changes
+        window.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme: newTheme } }));
+      }
+
+      // Initialize theme on page load
+      initTheme();
+
+      // Make toggleTheme available globally
+      window.toggleTheme = toggleTheme;
+
+      // Listen for system theme changes
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('theme')) {
+          if (e.matches) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        }
+      });
+    </script>
+
+    <!-- Mobile menu toggle script -->
+    <script>
+      function toggleMobileMenu() {
+        const menu = document.getElementById('mobile-menu');
+        const overlay = document.getElementById('mobile-menu-overlay');
+
+        if (menu && overlay) {
+          const isOpen = menu.classList.contains('translate-x-0');
+
+          if (isOpen) {
+            menu.classList.remove('translate-x-0');
+            menu.classList.add('-translate-x-full');
+            overlay.classList.add('hidden');
+            document.body.classList.remove('overflow-hidden');
+          } else {
+            menu.classList.remove('-translate-x-full');
+            menu.classList.add('translate-x-0');
+            overlay.classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+          }
+        }
+      }
+
+      // Make toggleMobileMenu available globally
+      window.toggleMobileMenu = toggleMobileMenu;
+
+      // Close mobile menu when clicking overlay
+      document.addEventListener('click', (e) => {
+        if (e.target && (e.target as HTMLElement).id === 'mobile-menu-overlay') {
+          toggleMobileMenu();
+        }
+      });
+
+      // Close mobile menu on escape key
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          const menu = document.getElementById('mobile-menu');
+          if (menu && menu.classList.contains('translate-x-0')) {
+            toggleMobileMenu();
+          }
+        }
+      });
+    </script>
+  </body>
+</html>

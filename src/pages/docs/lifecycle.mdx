@@ -1,0 +1,682 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Model Lifecycle
+description: Learn about model lifecycle hooks, events, and how to customize model behavior in Adonis ODM
+---
+
+# Model Lifecycle
+
+Model lifecycle hooks in Adonis ODM allow you to execute custom logic at specific points during a model's lifecycle. These hooks provide powerful ways to implement business logic, data validation, auditing, and other cross-cutting concerns.
+
+## Understanding Lifecycle Events
+
+### Available Hooks
+
+Adonis ODM provides hooks for various model operations:
+
+- **Before/After Create** - When creating new documents
+- **Before/After Save** - When saving (create or update)
+- **Before/After Update** - When updating existing documents
+- **Before/After Delete** - When deleting documents
+- **Before/After Find** - When querying documents
+- **Before/After Fetch** - When fetching multiple documents
+
+### Hook Execution Order
+
+```typescript
+// For creating a new model:
+// 1. beforeSave
+// 2. beforeCreate
+// 3. [Database Operation]
+// 4. afterCreate
+// 5. afterSave
+
+// For updating an existing model:
+// 1. beforeSave
+// 2. beforeUpdate
+// 3. [Database Operation]
+// 4. afterUpdate
+// 5. afterSave
+```
+
+## Defining Lifecycle Hooks
+
+### Basic Hook Definition
+
+```typescript
+import { BaseModel, column, beforeSave, afterCreate } from 'adonis-odm'
+import { DateTime } from 'luxon'
+import Hash from '@ioc:Adonis/Core/Hash'
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare name: string
+
+  @column()
+  declare email: string
+
+  @column()
+  declare password: string
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+
+  // Before save hook - runs on both create and update
+  @beforeSave()
+  public static async hashPassword(user: User) {
+    if (user.$dirty.password) {
+      user.password = await Hash.make(user.password)
+    }
+  }
+
+  // After create hook - runs only on create
+  @afterCreate()
+  public static async sendWelcomeEmail(user: User) {
+    // Send welcome email logic
+    await EmailService.sendWelcomeEmail(user.email, user.name)
+  }
+}
+```
+
+### Multiple Hooks
+
+```typescript
+export default class Post extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare title: string
+
+  @column()
+  declare content: string
+
+  @column()
+  declare slug: string
+
+  @column()
+  declare status: string
+
+  @column()
+  declare authorId: string
+
+  // Multiple before save hooks
+  @beforeSave()
+  public static async generateSlug(post: Post) {
+    if (post.$dirty.title) {
+      post.slug = post.title.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+    }
+  }
+
+  @beforeSave()
+  public static async validateContent(post: Post) {
+    if (post.$dirty.content && post.content.length < 100) {
+      throw new Error('Content must be at least 100 characters long')
+    }
+  }
+
+  @beforeSave()
+  public static async setPublishDate(post: Post) {
+    if (post.$dirty.status && post.status === 'published' && !post.publishedAt) {
+      post.publishedAt = DateTime.now()
+    }
+  }
+}
+```
+
+## Hook Types and Use Cases
+
+### Before Save Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @beforeSave()
+  public static async normalizeEmail(user: User) {
+    if (user.$dirty.email) {
+      user.email = user.email.toLowerCase().trim()
+    }
+  }
+
+  @beforeSave()
+  public static async validateAge(user: User) {
+    if (user.$dirty.age && user.age < 13) {
+      throw new Error('User must be at least 13 years old')
+    }
+  }
+
+  @beforeSave()
+  public static async setDefaults(user: User) {
+    if (user.$isLocal) { // Only for new records
+      user.status = user.status || 'pending'
+      user.role = user.role || 'user'
+    }
+  }
+}
+```
+
+### After Create Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @afterCreate()
+  public static async createProfile(user: User) {
+    await UserProfile.create({
+      userId: user._id,
+      displayName: user.name,
+      bio: '',
+      avatar: 'default.jpg'
+    })
+  }
+
+  @afterCreate()
+  public static async assignDefaultRole(user: User) {
+    const defaultRole = await Role.findBy('name', 'user')
+    if (defaultRole) {
+      await user.related('roles').attach([defaultRole._id])
+    }
+  }
+
+  @afterCreate()
+  public static async logUserCreation(user: User) {
+    await AuditLog.create({
+      action: 'user_created',
+      userId: user._id,
+      metadata: {
+        email: user.email,
+        name: user.name
+      }
+    })
+  }
+}
+```
+
+### Before Update Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @beforeUpdate()
+  public static async trackChanges(user: User) {
+    const changes = Object.keys(user.$dirty)
+    
+    if (changes.length > 0) {
+      await ChangeLog.create({
+        modelType: 'User',
+        modelId: user._id,
+        changes: user.$dirty,
+        changedBy: user.updatedBy || 'system'
+      })
+    }
+  }
+
+  @beforeUpdate()
+  public static async validateEmailChange(user: User) {
+    if (user.$dirty.email) {
+      const existingUser = await User.query()
+        .where('email', user.email)
+        .where('_id', '!=', user._id)
+        .first()
+
+      if (existingUser) {
+        throw new Error('Email already exists')
+      }
+    }
+  }
+}
+```
+
+### Before Delete Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @beforeDelete()
+  public static async checkDependencies(user: User) {
+    const postCount = await Post.query()
+      .where('authorId', user._id)
+      .count()
+
+    if (postCount > 0) {
+      throw new Error('Cannot delete user with existing posts')
+    }
+  }
+
+  @beforeDelete()
+  public static async softDelete(user: User) {
+    // Implement soft delete instead of hard delete
+    user.deletedAt = DateTime.now()
+    user.status = 'deleted'
+    await user.save()
+    
+    // Prevent actual deletion
+    return false
+  }
+}
+```
+
+### After Delete Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @afterDelete()
+  public static async cleanupRelatedData(user: User) {
+    // Delete user profile
+    await UserProfile.query()
+      .where('userId', user._id)
+      .delete()
+
+    // Delete user sessions
+    await UserSession.query()
+      .where('userId', user._id)
+      .delete()
+
+    // Remove from all roles
+    await user.related('roles').detach()
+  }
+
+  @afterDelete()
+  public static async logDeletion(user: User) {
+    await AuditLog.create({
+      action: 'user_deleted',
+      userId: user._id,
+      metadata: {
+        email: user.email,
+        deletedAt: DateTime.now()
+      }
+    })
+  }
+}
+```
+
+## Query Hooks
+
+### Before Find Hooks
+
+```typescript
+export default class Post extends BaseModel {
+  @beforeFind()
+  public static async applyDefaultFilters(query: ModelQueryBuilder) {
+    // Only show published posts by default
+    query.where('status', 'published')
+  }
+
+  @beforeFind()
+  public static async addAuthorInfo(query: ModelQueryBuilder) {
+    // Always preload author information
+    query.preload('author', (authorQuery) => {
+      authorQuery.select('name', 'email')
+    })
+  }
+}
+```
+
+### Before Fetch Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @beforeFetch()
+  public static async excludeDeleted(query: ModelQueryBuilder) {
+    // Exclude soft-deleted users
+    query.whereNull('deletedAt')
+  }
+
+  @beforeFetch()
+  public static async applyTenantFilter(query: ModelQueryBuilder) {
+    // Apply tenant filtering in multi-tenant applications
+    const currentTenant = await getCurrentTenant()
+    if (currentTenant) {
+      query.where('tenantId', currentTenant.id)
+    }
+  }
+}
+```
+
+## Advanced Hook Patterns
+
+### Conditional Hooks
+
+```typescript
+export default class Order extends BaseModel {
+  @beforeSave()
+  public static async calculateTotal(order: Order) {
+    // Only recalculate if items changed
+    if (order.$dirty.items || order.$isLocal) {
+      let total = 0
+      for (const item of order.items) {
+        total += item.quantity * item.price
+      }
+      order.total = total
+    }
+  }
+
+  @afterUpdate()
+  public static async notifyStatusChange(order: Order) {
+    // Only notify if status changed
+    if (order.$dirty.status) {
+      await NotificationService.sendOrderStatusUpdate(
+        order.customerId,
+        order.status,
+        order._id
+      )
+    }
+  }
+}
+```
+
+### Async Hook Chains
+
+```typescript
+export default class User extends BaseModel {
+  @afterCreate()
+  public static async onUserCreated(user: User) {
+    // Chain multiple async operations
+    await Promise.all([
+      this.createUserProfile(user),
+      this.sendWelcomeEmail(user),
+      this.assignDefaultPermissions(user),
+      this.logUserCreation(user)
+    ])
+  }
+
+  private static async createUserProfile(user: User) {
+    await UserProfile.create({
+      userId: user._id,
+      displayName: user.name
+    })
+  }
+
+  private static async sendWelcomeEmail(user: User) {
+    await EmailService.sendWelcomeEmail(user.email)
+  }
+
+  private static async assignDefaultPermissions(user: User) {
+    const defaultRole = await Role.findBy('name', 'user')
+    if (defaultRole) {
+      await user.related('roles').attach([defaultRole._id])
+    }
+  }
+
+  private static async logUserCreation(user: User) {
+    await AuditLog.create({
+      action: 'user_created',
+      userId: user._id
+    })
+  }
+}
+```
+
+### Error Handling in Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @beforeSave()
+  public static async validateUser(user: User) {
+    try {
+      // Validation logic
+      if (!user.email || !user.email.includes('@')) {
+        throw new Error('Invalid email format')
+      }
+
+      // External validation
+      const isValidEmail = await EmailValidator.validate(user.email)
+      if (!isValidEmail) {
+        throw new Error('Email domain not allowed')
+      }
+    } catch (error) {
+      // Log error for debugging
+      console.error('User validation failed:', error)
+      throw error // Re-throw to prevent save
+    }
+  }
+
+  @afterCreate()
+  public static async handlePostCreation(user: User) {
+    try {
+      await this.sendWelcomeEmail(user)
+    } catch (error) {
+      // Log but don't fail the creation
+      console.error('Failed to send welcome email:', error)
+      
+      // Optionally queue for retry
+      await EmailQueue.add('welcome-email', {
+        userId: user._id,
+        email: user.email
+      })
+    }
+  }
+}
+```
+
+## Hook Context and Data
+
+### Accessing Hook Context
+
+```typescript
+export default class Post extends BaseModel {
+  @beforeSave()
+  public static async setAuthor(post: Post, context: any) {
+    // Access current user from context
+    if (post.$isLocal && context.auth?.user) {
+      post.authorId = context.auth.user._id
+    }
+  }
+
+  @afterUpdate()
+  public static async logUpdate(post: Post, context: any) {
+    await AuditLog.create({
+      action: 'post_updated',
+      postId: post._id,
+      updatedBy: context.auth?.user?._id || 'system',
+      changes: post.$dirty
+    })
+  }
+}
+
+// Usage with context
+const post = new Post()
+post.title = 'New Post'
+post.content = 'Post content'
+
+await post.save({ 
+  context: { 
+    auth: { user: currentUser } 
+  } 
+})
+```
+
+### Sharing Data Between Hooks
+
+```typescript
+export default class Order extends BaseModel {
+  @beforeSave()
+  public static async calculateTotals(order: Order) {
+    if (order.$dirty.items) {
+      // Store calculation for later hooks
+      order.$extras.calculatedTotal = order.items.reduce(
+        (sum, item) => sum + (item.quantity * item.price), 0
+      )
+      order.total = order.$extras.calculatedTotal
+    }
+  }
+
+  @afterSave()
+  public static async updateInventory(order: Order) {
+    // Use calculated data from previous hook
+    if (order.$extras.calculatedTotal && order.$isLocal) {
+      for (const item of order.items) {
+        await Product.query()
+          .where('_id', item.productId)
+          .decrement('stock', item.quantity)
+      }
+    }
+  }
+}
+```
+
+## Testing Lifecycle Hooks
+
+### Hook Testing
+
+```typescript
+import { test } from '@japa/runner'
+import User from '#models/user'
+import Hash from '@ioc:Adonis/Core/Hash'
+
+test.group('User lifecycle hooks', () => {
+  test('should hash password before save', async ({ assert }) => {
+    const user = new User()
+    user.name = 'John Doe'
+    user.email = 'john@example.com'
+    user.password = 'plaintext'
+
+    await user.save()
+
+    assert.notEqual(user.password, 'plaintext')
+    assert.isTrue(await Hash.verify(user.password, 'plaintext'))
+  })
+
+  test('should create profile after user creation', async ({ assert }) => {
+    const user = await User.create({
+      name: 'Jane Doe',
+      email: 'jane@example.com',
+      password: 'password'
+    })
+
+    const profile = await UserProfile.findBy('userId', user._id)
+    assert.exists(profile)
+    assert.equal(profile.displayName, 'Jane Doe')
+  })
+
+  test('should prevent deletion with dependencies', async ({ assert }) => {
+    const user = await User.create({
+      name: 'Author',
+      email: 'author@example.com'
+    })
+
+    await Post.create({
+      title: 'Test Post',
+      content: 'Content',
+      authorId: user._id
+    })
+
+    await assert.rejects(async () => {
+      await user.delete()
+    }, 'Cannot delete user with existing posts')
+  })
+})
+```
+
+### Mocking Hooks for Testing
+
+```typescript
+import { test } from '@japa/runner'
+import sinon from 'sinon'
+
+test.group('User hooks with mocks', () => {
+  test('should call email service on user creation', async ({ assert }) => {
+    const emailSpy = sinon.spy(EmailService, 'sendWelcomeEmail')
+
+    await User.create({
+      name: 'Test User',
+      email: 'test@example.com',
+      password: 'password'
+    })
+
+    assert.isTrue(emailSpy.calledOnce)
+    assert.isTrue(emailSpy.calledWith('test@example.com', 'Test User'))
+
+    emailSpy.restore()
+  })
+})
+```
+
+## Best Practices
+
+### Hook Guidelines
+
+```typescript
+// 1. Keep hooks focused and single-purpose
+export default class User extends BaseModel {
+  // Good: Single responsibility
+  @beforeSave()
+  public static async hashPassword(user: User) {
+    if (user.$dirty.password) {
+      user.password = await Hash.make(user.password)
+    }
+  }
+
+  // Good: Single responsibility
+  @beforeSave()
+  public static async normalizeEmail(user: User) {
+    if (user.$dirty.email) {
+      user.email = user.email.toLowerCase().trim()
+    }
+  }
+
+  // Avoid: Multiple responsibilities in one hook
+  @beforeSave()
+  public static async doEverything(user: User) {
+    // Hash password, normalize email, validate, etc.
+    // This makes testing and maintenance difficult
+  }
+}
+
+// 2. Handle errors appropriately
+export default class Order extends BaseModel {
+  @afterCreate()
+  public static async processOrder(order: Order) {
+    try {
+      // Critical operations that should fail the creation
+      await PaymentService.processPayment(order.paymentInfo)
+    } catch (error) {
+      // Re-throw to fail the creation
+      throw error
+    }
+
+    try {
+      // Non-critical operations
+      await EmailService.sendOrderConfirmation(order.customerEmail)
+    } catch (error) {
+      // Log but don't fail
+      console.error('Failed to send confirmation email:', error)
+    }
+  }
+}
+
+// 3. Use appropriate hook types
+export default class Post extends BaseModel {
+  // Use beforeSave for data that applies to both create and update
+  @beforeSave()
+  public static async generateSlug(post: Post) {
+    if (post.$dirty.title) {
+      post.slug = slugify(post.title)
+    }
+  }
+
+  // Use beforeCreate for create-only logic
+  @beforeCreate()
+  public static async setDefaults(post: Post) {
+    post.status = 'draft'
+    post.viewCount = 0
+  }
+
+  // Use beforeUpdate for update-only logic
+  @beforeUpdate()
+  public static async trackModification(post: Post) {
+    post.modifiedAt = DateTime.now()
+  }
+}
+```
+
+## Next Steps
+
+- **[Database Transactions](/docs/transactions)** - Use hooks with transactions
+- **[Model Validation](/docs/models)** - Combine hooks with validation
+- **[Testing](/docs/testing)** - Test your lifecycle hooks
+- **[BaseModel API](/api/base-model)** - Complete lifecycle API reference

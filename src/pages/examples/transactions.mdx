@@ -1,0 +1,785 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Transactions Examples
+description: Master database transactions in Adonis ODM with practical examples for data consistency and integrity
+---
+
+# Transactions Examples
+
+This guide provides practical examples for using MongoDB transactions in Adonis ODM to ensure data consistency and integrity across multiple operations.
+
+## E-commerce Order Processing
+
+### Complete Order Transaction
+
+```typescript
+import Database from '@ioc:Adonis/Lucid/Database'
+import User from '#models/user'
+import Product from '#models/product'
+import Order from '#models/order'
+import Inventory from '#models/inventory'
+import PaymentTransaction from '#models/payment_transaction'
+
+// Process complete order with inventory, payment, and notifications
+async function processOrder(orderData: {
+  customerId: string
+  items: Array<{
+    productId: string
+    quantity: number
+    price: number
+  }>
+  paymentInfo: {
+    method: string
+    token: string
+    amount: number
+  }
+  shippingAddress: any
+}) {
+  return await Database.transaction(async (trx) => {
+    // 1. Validate customer
+    const customer = await User.query({ client: trx })
+      .where('_id', orderData.customerId)
+      .where('status', 'active')
+      .firstOrFail()
+
+    // 2. Validate and reserve inventory
+    const inventoryUpdates = []
+    let totalAmount = 0
+
+    for (const item of orderData.items) {
+      const product = await Product.query({ client: trx })
+        .where('_id', item.productId)
+        .where('isActive', true)
+        .firstOrFail()
+
+      const inventory = await Inventory.query({ client: trx })
+        .where('productId', item.productId)
+        .firstOrFail()
+
+      // Check stock availability
+      if (inventory.availableQuantity < item.quantity) {
+        throw new Error(`Insufficient stock for product ${product.name}`)
+      }
+
+      // Reserve inventory
+      inventory.availableQuantity -= item.quantity
+      inventory.reservedQuantity += item.quantity
+      await inventory.save({ client: trx })
+
+      inventoryUpdates.push({
+        productId: item.productId,
+        quantityReserved: item.quantity
+      })
+
+      totalAmount += item.quantity * item.price
+    }
+
+    // 3. Validate payment amount
+    if (Math.abs(totalAmount - orderData.paymentInfo.amount) > 0.01) {
+      throw new Error('Payment amount mismatch')
+    }
+
+    // 4. Process payment
+    const paymentTransaction = await PaymentTransaction.create({
+      customerId: orderData.customerId,
+      amount: orderData.paymentInfo.amount,
+      method: orderData.paymentInfo.method,
+      token: orderData.paymentInfo.token,
+      status: 'processing'
+    }, { client: trx })
+
+    // Simulate payment processing
+    const paymentResult = await processPayment(orderData.paymentInfo)
+    
+    if (!paymentResult.success) {
+      // Rollback inventory reservations
+      for (const update of inventoryUpdates) {
+        const inventory = await Inventory.query({ client: trx })
+          .where('productId', update.productId)
+          .firstOrFail()
+        
+        inventory.availableQuantity += update.quantityReserved
+        inventory.reservedQuantity -= update.quantityReserved
+        await inventory.save({ client: trx })
+      }
+
+      paymentTransaction.status = 'failed'
+      paymentTransaction.errorMessage = paymentResult.error
+      await paymentTransaction.save({ client: trx })
+
+      throw new Error(`Payment failed: ${paymentResult.error}`)
+    }
+
+    // 5. Update payment status
+    paymentTransaction.status = 'completed'
+    paymentTransaction.transactionId = paymentResult.transactionId
+    await paymentTransaction.save({ client: trx })
+
+    // 6. Create order
+    const order = await Order.create({
+      customerId: orderData.customerId,
+      items: orderData.items.map(item => ({
+        ...item,
+        totalPrice: item.quantity * item.price
+      })),
+      shippingAddress: orderData.shippingAddress,
+      payment: {
+        transactionId: paymentResult.transactionId,
+        method: orderData.paymentInfo.method,
+        amount: orderData.paymentInfo.amount,
+        status: 'completed'
+      },
+      status: 'confirmed',
+      total: totalAmount
+    }, { client: trx })
+
+    // 7. Convert reserved inventory to committed
+    for (const update of inventoryUpdates) {
+      const inventory = await Inventory.query({ client: trx })
+        .where('productId', update.productId)
+        .firstOrFail()
+      
+      inventory.reservedQuantity -= update.quantityReserved
+      inventory.soldQuantity += update.quantityReserved
+      await inventory.save({ client: trx })
+    }
+
+    // 8. Update customer statistics
+    customer.totalOrders += 1
+    customer.totalSpent += totalAmount
+    customer.lastOrderAt = DateTime.now()
+    await customer.save({ client: trx })
+
+    // 9. Create audit log
+    await AuditLog.create({
+      action: 'order_created',
+      userId: orderData.customerId,
+      resourceType: 'Order',
+      resourceId: order._id,
+      metadata: {
+        orderNumber: order.orderNumber,
+        amount: totalAmount,
+        itemCount: orderData.items.length
+      }
+    }, { client: trx })
+
+    return {
+      order,
+      paymentTransaction,
+      customer
+    }
+  })
+}
+
+// Mock payment processing function
+async function processPayment(paymentInfo: any) {
+  // Simulate external payment API call
+  await new Promise(resolve => setTimeout(resolve, 1000))
+  
+  // Simulate random payment failures for demo
+  if (Math.random() < 0.1) {
+    return {
+      success: false,
+      error: 'Payment declined by bank'
+    }
+  }
+
+  return {
+    success: true,
+    transactionId: `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  }
+}
+```
+
+## User Account Management
+
+### User Registration with Profile Setup
+
+```typescript
+// Complete user registration with profile, preferences, and welcome email
+async function registerUserWithProfile(registrationData: {
+  email: string
+  password: string
+  firstName: string
+  lastName: string
+  dateOfBirth: Date
+  preferences: {
+    newsletter: boolean
+    notifications: boolean
+    theme: string
+  }
+  referralCode?: string
+}) {
+  return await Database.transaction(async (trx) => {
+    // 1. Check if email already exists
+    const existingUser = await User.query({ client: trx })
+      .where('email', registrationData.email)
+      .first()
+
+    if (existingUser) {
+      throw new Error('Email already registered')
+    }
+
+    // 2. Hash password
+    const hashedPassword = await Hash.make(registrationData.password)
+
+    // 3. Create user account
+    const user = await User.create({
+      email: registrationData.email,
+      password: hashedPassword,
+      status: 'pending_verification',
+      role: 'user',
+      emailVerificationToken: generateVerificationToken()
+    }, { client: trx })
+
+    // 4. Create user profile
+    const profile = await UserProfile.create({
+      userId: user._id,
+      firstName: registrationData.firstName,
+      lastName: registrationData.lastName,
+      displayName: `${registrationData.firstName} ${registrationData.lastName}`,
+      dateOfBirth: registrationData.dateOfBirth,
+      avatar: generateDefaultAvatar(registrationData.firstName, registrationData.lastName)
+    }, { client: trx })
+
+    // 5. Create user preferences
+    const preferences = await UserPreferences.create({
+      userId: user._id,
+      newsletter: registrationData.preferences.newsletter,
+      emailNotifications: registrationData.preferences.notifications,
+      theme: registrationData.preferences.theme,
+      language: 'en',
+      timezone: 'UTC'
+    }, { client: trx })
+
+    // 6. Handle referral if provided
+    let referrer = null
+    if (registrationData.referralCode) {
+      referrer = await User.query({ client: trx })
+        .where('referralCode', registrationData.referralCode)
+        .where('status', 'active')
+        .first()
+
+      if (referrer) {
+        // Create referral record
+        await Referral.create({
+          referrerId: referrer._id,
+          referredUserId: user._id,
+          code: registrationData.referralCode,
+          status: 'pending',
+          rewardAmount: 10.00 // $10 referral bonus
+        }, { client: trx })
+
+        // Update referrer stats
+        referrer.referralCount += 1
+        await referrer.save({ client: trx })
+      }
+    }
+
+    // 7. Create welcome notification
+    await Notification.create({
+      userId: user._id,
+      type: 'welcome',
+      title: 'Welcome to our platform!',
+      message: 'Thank you for joining us. Please verify your email to get started.',
+      isRead: false
+    }, { client: trx })
+
+    // 8. Log registration event
+    await AuditLog.create({
+      action: 'user_registered',
+      userId: user._id,
+      metadata: {
+        email: user.email,
+        hasReferrer: !!referrer,
+        referrerCode: registrationData.referralCode
+      }
+    }, { client: trx })
+
+    return {
+      user,
+      profile,
+      preferences,
+      referrer
+    }
+  })
+}
+
+// Generate verification token
+function generateVerificationToken(): string {
+  return crypto.randomBytes(32).toString('hex')
+}
+
+// Generate default avatar URL
+function generateDefaultAvatar(firstName: string, lastName: string): string {
+  const initials = `${firstName[0]}${lastName[0]}`.toUpperCase()
+  return `https://ui-avatars.com/api/?name=${initials}&background=random`
+}
+```
+
+## Financial Operations
+
+### Money Transfer Between Accounts
+
+```typescript
+// Secure money transfer with audit trail
+async function transferMoney(transferData: {
+  fromAccountId: string
+  toAccountId: string
+  amount: number
+  currency: string
+  description: string
+  reference?: string
+}) {
+  return await Database.transaction(async (trx) => {
+    // 1. Validate accounts
+    const fromAccount = await Account.query({ client: trx })
+      .where('_id', transferData.fromAccountId)
+      .where('status', 'active')
+      .where('isLocked', false)
+      .firstOrFail()
+
+    const toAccount = await Account.query({ client: trx })
+      .where('_id', transferData.toAccountId)
+      .where('status', 'active')
+      .firstOrFail()
+
+    // 2. Validate currency match
+    if (fromAccount.currency !== transferData.currency || 
+        toAccount.currency !== transferData.currency) {
+      throw new Error('Currency mismatch')
+    }
+
+    // 3. Check sufficient balance
+    if (fromAccount.balance < transferData.amount) {
+      throw new Error('Insufficient funds')
+    }
+
+    // 4. Check transfer limits
+    const dailyTransfers = await Transaction.query({ client: trx })
+      .where('fromAccountId', transferData.fromAccountId)
+      .where('type', 'transfer')
+      .where('createdAt', '>=', DateTime.now().startOf('day'))
+      .sum('amount')
+
+    const dailyLimit = fromAccount.dailyTransferLimit || 10000
+    if (dailyTransfers + transferData.amount > dailyLimit) {
+      throw new Error('Daily transfer limit exceeded')
+    }
+
+    // 5. Create transaction record
+    const transaction = await Transaction.create({
+      type: 'transfer',
+      fromAccountId: transferData.fromAccountId,
+      toAccountId: transferData.toAccountId,
+      amount: transferData.amount,
+      currency: transferData.currency,
+      description: transferData.description,
+      reference: transferData.reference || generateTransactionReference(),
+      status: 'processing'
+    }, { client: trx })
+
+    // 6. Update account balances
+    fromAccount.balance -= transferData.amount
+    fromAccount.lastTransactionAt = DateTime.now()
+    await fromAccount.save({ client: trx })
+
+    toAccount.balance += transferData.amount
+    toAccount.lastTransactionAt = DateTime.now()
+    await toAccount.save({ client: trx })
+
+    // 7. Create account entries for double-entry bookkeeping
+    await AccountEntry.createMany([
+      {
+        accountId: transferData.fromAccountId,
+        transactionId: transaction._id,
+        type: 'debit',
+        amount: transferData.amount,
+        balance: fromAccount.balance,
+        description: `Transfer to ${toAccount.accountNumber}`
+      },
+      {
+        accountId: transferData.toAccountId,
+        transactionId: transaction._id,
+        type: 'credit',
+        amount: transferData.amount,
+        balance: toAccount.balance,
+        description: `Transfer from ${fromAccount.accountNumber}`
+      }
+    ], { client: trx })
+
+    // 8. Update transaction status
+    transaction.status = 'completed'
+    transaction.completedAt = DateTime.now()
+    await transaction.save({ client: trx })
+
+    // 9. Create notifications
+    await Notification.createMany([
+      {
+        userId: fromAccount.userId,
+        type: 'transfer_sent',
+        title: 'Money Sent',
+        message: `You sent ${transferData.currency} ${transferData.amount} to ${toAccount.accountNumber}`,
+        metadata: { transactionId: transaction._id }
+      },
+      {
+        userId: toAccount.userId,
+        type: 'transfer_received',
+        title: 'Money Received',
+        message: `You received ${transferData.currency} ${transferData.amount} from ${fromAccount.accountNumber}`,
+        metadata: { transactionId: transaction._id }
+      }
+    ], { client: trx })
+
+    // 10. Log for compliance
+    await ComplianceLog.create({
+      action: 'money_transfer',
+      fromUserId: fromAccount.userId,
+      toUserId: toAccount.userId,
+      amount: transferData.amount,
+      currency: transferData.currency,
+      transactionId: transaction._id,
+      ipAddress: getCurrentIPAddress(),
+      userAgent: getCurrentUserAgent()
+    }, { client: trx })
+
+    return {
+      transaction,
+      fromAccount,
+      toAccount
+    }
+  })
+}
+
+function generateTransactionReference(): string {
+  return `TXN${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+}
+```
+
+## Content Management
+
+### Blog Post Publishing Workflow
+
+```typescript
+// Complete blog post publishing with SEO, notifications, and analytics
+async function publishBlogPost(postData: {
+  authorId: string
+  title: string
+  content: string
+  tags: string[]
+  categories: string[]
+  featuredImage?: string
+  seoTitle?: string
+  seoDescription?: string
+  publishAt?: DateTime
+  notifySubscribers: boolean
+}) {
+  return await Database.transaction(async (trx) => {
+    // 1. Validate author
+    const author = await User.query({ client: trx })
+      .where('_id', postData.authorId)
+      .where('status', 'active')
+      .whereIn('role', ['author', 'editor', 'admin'])
+      .firstOrFail()
+
+    // 2. Generate slug
+    const baseSlug = postData.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+
+    let slug = baseSlug
+    let counter = 1
+    
+    // Ensure unique slug
+    while (await BlogPost.query({ client: trx }).where('slug', slug).first()) {
+      slug = `${baseSlug}-${counter}`
+      counter++
+    }
+
+    // 3. Calculate reading time and word count
+    const wordCount = postData.content.split(/\s+/).length
+    const readingTime = Math.ceil(wordCount / 200) // Average reading speed
+
+    // 4. Create blog post
+    const post = await BlogPost.create({
+      title: postData.title,
+      slug,
+      content: postData.content,
+      authorId: postData.authorId,
+      tags: postData.tags,
+      categories: postData.categories,
+      status: postData.publishAt && postData.publishAt > DateTime.now() ? 'scheduled' : 'published',
+      metadata: {
+        wordCount,
+        readingTime,
+        featuredImage: postData.featuredImage,
+        excerpt: postData.content.substring(0, 200) + '...',
+        seoTitle: postData.seoTitle || postData.title,
+        seoDescription: postData.seoDescription || postData.content.substring(0, 160)
+      },
+      publishedAt: postData.publishAt || DateTime.now(),
+      viewCount: 0,
+      likeCount: 0,
+      comments: []
+    }, { client: trx })
+
+    // 5. Update author statistics
+    author.postCount += 1
+    author.lastPostAt = DateTime.now()
+    await author.save({ client: trx })
+
+    // 6. Update tag and category statistics
+    for (const tag of postData.tags) {
+      const tagRecord = await Tag.query({ client: trx })
+        .where('name', tag)
+        .first()
+
+      if (tagRecord) {
+        tagRecord.postCount += 1
+        await tagRecord.save({ client: trx })
+      } else {
+        await Tag.create({
+          name: tag,
+          slug: tag.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          postCount: 1
+        }, { client: trx })
+      }
+    }
+
+    for (const category of postData.categories) {
+      const categoryRecord = await Category.query({ client: trx })
+        .where('name', category)
+        .first()
+
+      if (categoryRecord) {
+        categoryRecord.postCount += 1
+        await categoryRecord.save({ client: trx })
+      }
+    }
+
+    // 7. Create SEO record
+    await SEORecord.create({
+      postId: post._id,
+      title: post.metadata.seoTitle,
+      description: post.metadata.seoDescription,
+      keywords: postData.tags.join(', '),
+      canonicalUrl: `https://example.com/blog/${slug}`,
+      ogTitle: postData.title,
+      ogDescription: post.metadata.excerpt,
+      ogImage: postData.featuredImage
+    }, { client: trx })
+
+    // 8. Schedule notifications if needed
+    if (postData.notifySubscribers && post.status === 'published') {
+      // Get all subscribers
+      const subscribers = await User.query({ client: trx })
+        .where('isSubscribed', true)
+        .where('status', 'active')
+        .select('_id', 'email', 'firstName')
+        .all()
+
+      // Create notification jobs
+      const notifications = subscribers.map(subscriber => ({
+        userId: subscriber._id,
+        type: 'new_post',
+        title: 'New Blog Post Published',
+        message: `Check out our latest post: ${postData.title}`,
+        metadata: {
+          postId: post._id,
+          postTitle: postData.title,
+          postSlug: slug
+        }
+      }))
+
+      await Notification.createMany(notifications, { client: trx })
+
+      // Queue email notifications
+      await EmailQueue.create({
+        type: 'new_post_notification',
+        recipients: subscribers.map(s => s.email),
+        data: {
+          postTitle: postData.title,
+          postSlug: slug,
+          authorName: author.name,
+          excerpt: post.metadata.excerpt
+        },
+        scheduledAt: DateTime.now().plus({ minutes: 5 }) // Delay to allow transaction to complete
+      }, { client: trx })
+    }
+
+    // 9. Create analytics event
+    await AnalyticsEvent.create({
+      event: 'post_published',
+      userId: postData.authorId,
+      metadata: {
+        postId: post._id,
+        postTitle: postData.title,
+        wordCount,
+        tagCount: postData.tags.length,
+        categoryCount: postData.categories.length
+      }
+    }, { client: trx })
+
+    // 10. Log activity
+    await ActivityLog.create({
+      userId: postData.authorId,
+      action: 'post_published',
+      resourceType: 'BlogPost',
+      resourceId: post._id,
+      description: `Published blog post: ${postData.title}`
+    }, { client: trx })
+
+    return {
+      post,
+      author,
+      slug
+    }
+  })
+}
+```
+
+## Error Handling and Retry Logic
+
+### Robust Transaction with Retry
+
+```typescript
+// Transaction with automatic retry for transient errors
+async function robustTransaction<T>(
+  operation: (trx: TransactionClient) => Promise<T>,
+  options: {
+    maxRetries?: number
+    retryDelay?: number
+    retryMultiplier?: number
+  } = {}
+): Promise<T> {
+  const maxRetries = options.maxRetries || 3
+  const baseDelay = options.retryDelay || 100
+  const multiplier = options.retryMultiplier || 2
+
+  let lastError: Error
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await Database.transaction(operation)
+    } catch (error) {
+      lastError = error
+
+      // Check if error is retryable
+      const isRetryable = 
+        error.errorLabels?.includes('TransientTransactionError') ||
+        error.errorLabels?.includes('UnknownTransactionCommitResult') ||
+        error.code === 11000 || // Duplicate key (might be resolved by retry)
+        error.name === 'MongoNetworkError'
+
+      if (isRetryable && attempt < maxRetries) {
+        const delay = baseDelay * Math.pow(multiplier, attempt - 1)
+        console.log(`Transaction attempt ${attempt} failed, retrying in ${delay}ms...`)
+        
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+
+      // Log non-retryable errors or final failure
+      console.error(`Transaction failed after ${attempt} attempts:`, error)
+      throw error
+    }
+  }
+
+  throw lastError!
+}
+
+// Usage example
+const result = await robustTransaction(async (trx) => {
+  // Your transaction operations here
+  const user = await User.create(userData, { client: trx })
+  const profile = await UserProfile.create(profileData, { client: trx })
+  return { user, profile }
+}, {
+  maxRetries: 5,
+  retryDelay: 200,
+  retryMultiplier: 1.5
+})
+```
+
+### Transaction Monitoring and Logging
+
+```typescript
+// Enhanced transaction wrapper with monitoring
+async function monitoredTransaction<T>(
+  name: string,
+  operation: (trx: TransactionClient) => Promise<T>,
+  options: {
+    timeout?: number
+    logLevel?: 'debug' | 'info' | 'warn' | 'error'
+  } = {}
+): Promise<T> {
+  const startTime = Date.now()
+  const timeout = options.timeout || 30000 // 30 seconds default
+  const logLevel = options.logLevel || 'info'
+
+  console.log(`[${logLevel.toUpperCase()}] Starting transaction: ${name}`)
+
+  try {
+    // Set up timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Transaction ${name} timed out after ${timeout}ms`))
+      }, timeout)
+    })
+
+    // Race between transaction and timeout
+    const result = await Promise.race([
+      Database.transaction(operation),
+      timeoutPromise
+    ])
+
+    const duration = Date.now() - startTime
+    console.log(`[${logLevel.toUpperCase()}] Transaction ${name} completed in ${duration}ms`)
+
+    // Log performance metrics
+    await TransactionMetrics.create({
+      name,
+      duration,
+      status: 'success',
+      timestamp: new Date()
+    })
+
+    return result
+  } catch (error) {
+    const duration = Date.now() - startTime
+    console.error(`[ERROR] Transaction ${name} failed after ${duration}ms:`, error.message)
+
+    // Log error metrics
+    await TransactionMetrics.create({
+      name,
+      duration,
+      status: 'error',
+      errorMessage: error.message,
+      errorCode: error.code,
+      timestamp: new Date()
+    })
+
+    throw error
+  }
+}
+
+// Usage
+const orderResult = await monitoredTransaction(
+  'process_order',
+  async (trx) => {
+    return await processOrder(orderData)
+  },
+  {
+    timeout: 45000, // 45 seconds for complex order processing
+    logLevel: 'info'
+  }
+)
+```
+
+## Next Steps
+
+- **[Database Transactions Guide](/docs/transactions)** - Complete transaction reference
+- **[Advanced Queries](/examples/advanced-queries)** - Complex query patterns
+- **[Embedded Documents](/examples/embedded-documents)** - Working with nested data
+- **[Transaction Client API](/api/transaction-client)** - Complete API reference

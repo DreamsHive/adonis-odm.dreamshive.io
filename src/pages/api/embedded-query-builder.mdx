@@ -1,0 +1,542 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: EmbeddedQueryBuilder API
+description: Complete API reference for querying embedded documents in Adonis ODM
+---
+
+# EmbeddedQueryBuilder API Reference
+
+The EmbeddedQueryBuilder provides specialized methods for querying embedded documents and nested data structures in MongoDB. It extends the regular query builder with embedded document-specific functionality.
+
+## Class Definition
+
+```typescript
+class EmbeddedQueryBuilder<Model extends BaseModel> extends ModelQueryBuilder<Model> {
+  // Embedded document methods
+  whereEmbedded(path: string, callback: (query: EmbeddedQueryBuilder) => void): this
+  whereEmbeddedExists(path: string): this
+  whereEmbeddedNotExists(path: string): this
+  whereEmbeddedSize(path: string, size: number): this
+  
+  // Array element methods
+  whereElemMatch(path: string, conditions: any): this
+  whereArrayElement(path: string, index: number, value: any): this
+  
+  // Projection methods
+  projectEmbedded(path: string, fields?: string[]): this
+  sliceArray(path: string, limit: number, skip?: number): this
+}
+```
+
+## Embedded Document Queries
+
+### `whereEmbedded(path, callback)`
+
+Query nested embedded documents with a callback.
+
+```typescript
+whereEmbedded(path: string, callback: (query: EmbeddedQueryBuilder) => void): this
+```
+
+**Parameters:**
+- `path` - The path to the embedded document field
+- `callback` - Function to build the embedded query
+
+**Example:**
+```typescript
+// Query users with specific address details
+const users = await User.query()
+  .whereEmbedded('address', (query) => {
+    query
+      .where('city', 'New York')
+      .where('state', 'NY')
+      .where('zipCode', 'like', '100%')
+  })
+  .all()
+
+// Query orders with specific item conditions
+const orders = await Order.query()
+  .whereEmbedded('items', (query) => {
+    query
+      .where('price', '>', 100)
+      .where('quantity', '>=', 2)
+  })
+  .all()
+```
+
+### `whereEmbeddedExists(path)`
+
+Check if an embedded document field exists.
+
+```typescript
+whereEmbeddedExists(path: string): this
+```
+
+**Example:**
+```typescript
+// Find users with address information
+const users = await User.query()
+  .whereEmbeddedExists('address')
+  .all()
+
+// Find companies with headquarters contact info
+const companies = await Company.query()
+  .whereEmbeddedExists('headquarters.contact')
+  .all()
+```
+
+### `whereEmbeddedNotExists(path)`
+
+Check if an embedded document field doesn't exist.
+
+```typescript
+whereEmbeddedNotExists(path: string): this
+```
+
+**Example:**
+```typescript
+// Find users without profile pictures
+const users = await User.query()
+  .whereEmbeddedNotExists('profile.avatar')
+  .all()
+```
+
+### `whereEmbeddedSize(path, size)`
+
+Filter by the size of an embedded array.
+
+```typescript
+whereEmbeddedSize(path: string, size: number): this
+```
+
+**Example:**
+```typescript
+// Find orders with exactly 3 items
+const orders = await Order.query()
+  .whereEmbeddedSize('items', 3)
+  .all()
+
+// Find users with exactly 2 addresses
+const users = await User.query()
+  .whereEmbeddedSize('addresses', 2)
+  .all()
+```
+
+## Array Element Queries
+
+### `whereElemMatch(path, conditions)`
+
+Match array elements using MongoDB's `$elemMatch` operator.
+
+```typescript
+whereElemMatch(path: string, conditions: any): this
+```
+
+**Parameters:**
+- `path` - The path to the array field
+- `conditions` - MongoDB query conditions for array elements
+
+**Example:**
+```typescript
+// Find orders with items matching multiple conditions
+const orders = await Order.query()
+  .whereElemMatch('items', {
+    price: { $gte: 100 },
+    quantity: { $gte: 2 },
+    category: 'electronics'
+  })
+  .all()
+
+// Find users with skills matching criteria
+const users = await User.query()
+  .whereElemMatch('skills', {
+    name: 'JavaScript',
+    level: { $gte: 8 },
+    certified: true
+  })
+  .all()
+```
+
+### `whereArrayElement(path, index, value)`
+
+Query specific array element by index.
+
+```typescript
+whereArrayElement(path: string, index: number, value: any): this
+```
+
+**Example:**
+```typescript
+// Find users where first tag is 'premium'
+const users = await User.query()
+  .whereArrayElement('tags', 0, 'premium')
+  .all()
+
+// Find orders where second item has specific product ID
+const orders = await Order.query()
+  .whereArrayElement('items', 1, { productId: 'prod123' })
+  .all()
+```
+
+## Nested Field Queries
+
+### Direct Nested Field Access
+
+Query nested fields using dot notation:
+
+```typescript
+// Query nested object fields
+const users = await User.query()
+  .where('address.city', 'San Francisco')
+  .where('address.coordinates.lat', '>', 37.7)
+  .all()
+
+// Query nested array fields
+const posts = await Post.query()
+  .where('metadata.tags.0', 'featured')
+  .where('metadata.author.verified', true)
+  .all()
+```
+
+### Complex Nested Queries
+
+```typescript
+// Combine multiple nested conditions
+const companies = await Company.query()
+  .where('headquarters.address.country', 'USA')
+  .whereEmbedded('branches', (query) => {
+    query
+      .where('city', 'Seattle')
+      .whereEmbedded('contact', (contactQuery) => {
+        contactQuery.where('email', 'like', '%@company.com')
+      })
+  })
+  .all()
+```
+
+## Projection Methods
+
+### `projectEmbedded(path, fields?)`
+
+Project specific fields from embedded documents.
+
+```typescript
+projectEmbedded(path: string, fields?: string[]): this
+```
+
+**Example:**
+```typescript
+// Project specific address fields
+const users = await User.query()
+  .select('name', 'email')
+  .projectEmbedded('address', ['city', 'state', 'zipCode'])
+  .all()
+
+// Project all fields from profile
+const users = await User.query()
+  .projectEmbedded('profile')
+  .all()
+```
+
+### `sliceArray(path, limit, skip?)`
+
+Limit array elements in results using MongoDB's `$slice` operator.
+
+```typescript
+sliceArray(path: string, limit: number, skip?: number): this
+```
+
+**Parameters:**
+- `path` - The path to the array field
+- `limit` - Number of elements to include
+- `skip` - Number of elements to skip (optional)
+
+**Example:**
+```typescript
+// Get only first 5 items from orders
+const orders = await Order.query()
+  .sliceArray('items', 5)
+  .all()
+
+// Get items 10-20 from orders (skip 10, take 10)
+const orders = await Order.query()
+  .sliceArray('items', 10, 10)
+  .all()
+
+// Get last 3 comments
+const posts = await Post.query()
+  .sliceArray('comments', -3)
+  .all()
+```
+
+## Advanced Embedded Queries
+
+### Aggregation with Embedded Documents
+
+```typescript
+// Unwind and group embedded arrays
+const itemStats = await Order.query()
+  .aggregate([
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: '$items.category',
+        totalQuantity: { $sum: '$items.quantity' },
+        avgPrice: { $avg: '$items.price' },
+        count: { $sum: 1 }
+      }
+    },
+    { $sort: { totalQuantity: -1 } }
+  ])
+
+// Complex embedded aggregation
+const userStats = await User.query()
+  .aggregate([
+    {
+      $project: {
+        name: 1,
+        addressCount: { $size: { $ifNull: ['$addresses', []] } },
+        hasProfile: { $ne: ['$profile', null] },
+        skillCount: { $size: { $ifNull: ['$skills', []] } }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        avgAddresses: { $avg: '$addressCount' },
+        usersWithProfile: { $sum: { $cond: ['$hasProfile', 1, 0] } },
+        avgSkills: { $avg: '$skillCount' }
+      }
+    }
+  ])
+```
+
+### Text Search in Embedded Documents
+
+```typescript
+// Search within embedded document fields
+const posts = await Post.query()
+  .whereText('javascript mongodb', {
+    fields: ['title', 'content', 'metadata.tags']
+  })
+  .all()
+
+// Search in nested arrays
+const users = await User.query()
+  .where('skills.name', 'regex', /javascript/i)
+  .all()
+```
+
+## Update Operations on Embedded Documents
+
+### Updating Nested Fields
+
+```typescript
+// Update nested object fields
+await User.query()
+  .where('_id', userId)
+  .update({
+    'address.city': 'New York',
+    'address.zipCode': '10001',
+    'profile.bio': 'Updated bio'
+  })
+
+// Update array elements
+await Order.query()
+  .where('_id', orderId)
+  .update({
+    'items.0.quantity': 5,
+    'items.0.total': 500
+  })
+```
+
+### Array Update Operations
+
+```typescript
+// Add to embedded arrays
+await User.query()
+  .where('_id', userId)
+  .push('addresses', {
+    type: 'work',
+    street: '123 Business Ave',
+    city: 'San Francisco'
+  })
+
+// Remove from embedded arrays
+await User.query()
+  .where('_id', userId)
+  .pull('skills', { name: 'PHP' })
+
+// Update specific array element
+await Order.query()
+  .where('_id', orderId)
+  .where('items.productId', 'prod123')
+  .update({
+    'items.$.quantity': 3,
+    'items.$.total': 300
+  })
+```
+
+## Validation and Constraints
+
+### Embedded Document Validation
+
+```typescript
+// Validate embedded document structure
+const isValid = await User.query()
+  .where('_id', userId)
+  .whereEmbedded('address', (query) => {
+    query
+      .whereExists('street')
+      .whereExists('city')
+      .whereExists('zipCode')
+      .where('zipCode', 'regex', /^\d{5}(-\d{4})?$/)
+  })
+  .exists()
+
+// Validate array constraints
+const hasValidItems = await Order.query()
+  .where('_id', orderId)
+  .whereEmbeddedSize('items', { $gte: 1, $lte: 50 })
+  .whereElemMatch('items', {
+    quantity: { $gte: 1 },
+    price: { $gt: 0 }
+  })
+  .exists()
+```
+
+## Performance Optimization
+
+### Indexing Embedded Fields
+
+```typescript
+// Define indexes for embedded fields
+export default class User extends BaseModel {
+  static get indexes() {
+    return [
+      // Single field indexes
+      { 'address.city': 1 },
+      { 'address.zipCode': 1 },
+      
+      // Compound indexes
+      { 'address.state': 1, 'address.city': 1 },
+      
+      // Array indexes
+      { 'skills.name': 1 },
+      { 'tags': 1 },
+      
+      // Text indexes for search
+      {
+        'profile.bio': 'text',
+        'profile.interests': 'text'
+      }
+    ]
+  }
+}
+```
+
+### Efficient Embedded Queries
+
+```typescript
+// Use projection to limit data transfer
+const users = await User.query()
+  .select('name', 'email')
+  .projectEmbedded('address', ['city', 'state'])
+  .sliceArray('recentActivity', 10)
+  .where('status', 'active')
+  .all()
+
+// Use aggregation for complex embedded analysis
+const summary = await Order.query()
+  .aggregate([
+    { $match: { status: 'completed' } },
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: '$items.category',
+        revenue: { $sum: '$items.total' },
+        quantity: { $sum: '$items.quantity' }
+      }
+    }
+  ])
+```
+
+## Error Handling
+
+### Common Embedded Query Errors
+
+```typescript
+try {
+  const users = await User.query()
+    .whereEmbedded('address', (query) => {
+      query.where('invalidField', 'value')
+    })
+    .all()
+} catch (error) {
+  if (error.name === 'MongoError' && error.code === 2) {
+    console.error('Invalid field path in embedded query')
+  }
+}
+
+// Validate embedded paths before querying
+function validateEmbeddedPath(model: typeof BaseModel, path: string): boolean {
+  // Implementation to validate if embedded path exists in model schema
+  return model.schema.hasEmbeddedPath(path)
+}
+```
+
+## Testing Embedded Queries
+
+### Test Examples
+
+```typescript
+import { test } from '@japa/runner'
+
+test.group('Embedded queries', () => {
+  test('should query embedded documents', async ({ assert }) => {
+    const user = await User.create({
+      name: 'John Doe',
+      address: {
+        street: '123 Main St',
+        city: 'New York',
+        state: 'NY',
+        zipCode: '10001'
+      }
+    })
+
+    const found = await User.query()
+      .whereEmbedded('address', (query) => {
+        query.where('city', 'New York').where('state', 'NY')
+      })
+      .first()
+
+    assert.equal(found._id, user._id)
+  })
+
+  test('should query array elements', async ({ assert }) => {
+    const order = await Order.create({
+      customerId: 'cust123',
+      items: [
+        { productId: 'prod1', quantity: 2, price: 50 },
+        { productId: 'prod2', quantity: 1, price: 100 }
+      ]
+    })
+
+    const found = await Order.query()
+      .whereElemMatch('items', {
+        price: { $gte: 100 },
+        quantity: { $gte: 1 }
+      })
+      .first()
+
+    assert.equal(found._id, order._id)
+  })
+})
+```
+
+## Next Steps
+
+- **[Query Builder API](/api/query-builder)** - Main query builder reference
+- **[BaseModel API](/api/base-model)** - Model methods and properties
+- **[Embedded Documents Guide](/docs/embedded-documents)** - Usage examples and patterns
+- **[Database Manager API](/api/database-manager)** - Database connection management

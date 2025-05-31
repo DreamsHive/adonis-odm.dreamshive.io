@@ -1,0 +1,632 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Pagination
+description: Learn how to efficiently paginate large datasets in Adonis ODM with various pagination strategies
+---
+
+# Pagination
+
+Pagination is essential for handling large datasets efficiently in web applications. Adonis ODM provides multiple pagination strategies to suit different use cases, from simple offset-based pagination to cursor-based pagination for real-time applications.
+
+## Basic Pagination
+
+### Simple Pagination
+
+```typescript
+import User from '#models/user'
+
+// Basic pagination
+const result = await User.query()
+  .where('status', 'active')
+  .orderBy('createdAt', 'desc')
+  .paginate(1, 20) // page 1, 20 items per page
+
+// Access paginated data
+console.log(result.data)        // Array of users
+console.log(result.meta.total)  // Total count
+console.log(result.meta.page)   // Current page (1)
+console.log(result.meta.perPage) // Items per page (20)
+console.log(result.meta.lastPage) // Last page number
+console.log(result.meta.hasNext) // Has next page
+console.log(result.meta.hasPrev) // Has previous page
+```
+
+### Pagination with Filters
+
+```typescript
+// Paginate with complex filters
+const result = await User.query()
+  .where('status', 'active')
+  .where('age', '>=', 18)
+  .whereIn('role', ['user', 'premium'])
+  .where('createdAt', '>=', DateTime.now().minus({ months: 6 }))
+  .orderBy('lastLoginAt', 'desc')
+  .paginate(page, perPage)
+```
+
+### Custom Page Size
+
+```typescript
+// Different page sizes for different contexts
+const mobileResult = await User.query()
+  .paginate(page, 10) // Smaller pages for mobile
+
+const desktopResult = await User.query()
+  .paginate(page, 50) // Larger pages for desktop
+
+const apiResult = await User.query()
+  .paginate(page, 100) // Even larger for API consumers
+```
+
+## Pagination Response Structure
+
+### Standard Response Format
+
+```typescript
+interface PaginationResult<T> {
+  data: T[]
+  meta: {
+    total: number
+    page: number
+    perPage: number
+    lastPage: number
+    hasNext: boolean
+    hasPrev: boolean
+    from: number
+    to: number
+  }
+  links: {
+    first: string
+    last: string
+    next: string | null
+    prev: string | null
+  }
+}
+```
+
+### Using Pagination Meta
+
+```typescript
+const result = await User.query()
+  .where('status', 'active')
+  .paginate(2, 20)
+
+// Display pagination info
+console.log(`Showing ${result.meta.from}-${result.meta.to} of ${result.meta.total} users`)
+console.log(`Page ${result.meta.page} of ${result.meta.lastPage}`)
+
+// Navigation logic
+if (result.meta.hasNext) {
+  console.log('Next page available')
+}
+
+if (result.meta.hasPrev) {
+  console.log('Previous page available')
+}
+```
+
+## Advanced Pagination Strategies
+
+### Cursor-Based Pagination
+
+Cursor-based pagination is more efficient for large datasets and real-time applications:
+
+```typescript
+// Cursor pagination using ID
+const pageSize = 20
+let cursor = null
+
+// First page
+let result = await User.query()
+  .where('status', 'active')
+  .orderBy('_id', 'desc')
+  .limit(pageSize + 1) // Get one extra to check if there's a next page
+  .all()
+
+let hasNext = result.length > pageSize
+if (hasNext) {
+  result = result.slice(0, pageSize) // Remove the extra item
+}
+
+// Next page
+if (hasNext) {
+  cursor = result[result.length - 1]._id
+  
+  const nextResult = await User.query()
+    .where('status', 'active')
+    .where('_id', '<', cursor)
+    .orderBy('_id', 'desc')
+    .limit(pageSize + 1)
+    .all()
+}
+```
+
+### Time-Based Cursor Pagination
+
+```typescript
+// Cursor pagination using timestamps
+async function getPaginatedPosts(cursor?: DateTime, limit: number = 20) {
+  const query = Post.query()
+    .where('isPublished', true)
+    .orderBy('publishedAt', 'desc')
+    .limit(limit + 1)
+
+  if (cursor) {
+    query.where('publishedAt', '<', cursor)
+  }
+
+  const posts = await query.all()
+  const hasNext = posts.length > limit
+
+  if (hasNext) {
+    posts.pop() // Remove extra item
+  }
+
+  return {
+    data: posts,
+    hasNext,
+    nextCursor: hasNext ? posts[posts.length - 1].publishedAt : null
+  }
+}
+
+// Usage
+const firstPage = await getPaginatedPosts()
+const secondPage = await getPaginatedPosts(firstPage.nextCursor)
+```
+
+### Keyset Pagination
+
+```typescript
+// Keyset pagination for consistent ordering
+async function getKeysetPaginatedUsers(
+  lastId?: string,
+  lastCreatedAt?: DateTime,
+  limit: number = 20
+) {
+  const query = User.query()
+    .orderBy('createdAt', 'desc')
+    .orderBy('_id', 'desc') // Secondary sort for uniqueness
+    .limit(limit + 1)
+
+  if (lastCreatedAt && lastId) {
+    query.where((subQuery) => {
+      subQuery
+        .where('createdAt', '<', lastCreatedAt)
+        .orWhere((nestedQuery) => {
+          nestedQuery
+            .where('createdAt', lastCreatedAt)
+            .where('_id', '<', lastId)
+        })
+    })
+  }
+
+  const users = await query.all()
+  const hasNext = users.length > limit
+
+  if (hasNext) {
+    users.pop()
+  }
+
+  return {
+    data: users,
+    hasNext,
+    lastId: users.length > 0 ? users[users.length - 1]._id : null,
+    lastCreatedAt: users.length > 0 ? users[users.length - 1].createdAt : null
+  }
+}
+```
+
+## Performance Optimization
+
+### Efficient Counting
+
+```typescript
+// Avoid counting for every page request
+class PaginationCache {
+  private cache = new Map<string, { count: number, timestamp: number }>()
+  private ttl = 5 * 60 * 1000 // 5 minutes
+
+  async getCachedCount(cacheKey: string, countQuery: () => Promise<number>): Promise<number> {
+    const cached = this.cache.get(cacheKey)
+    
+    if (cached && Date.now() - cached.timestamp < this.ttl) {
+      return cached.count
+    }
+
+    const count = await countQuery()
+    this.cache.set(cacheKey, { count, timestamp: Date.now() })
+    
+    return count
+  }
+}
+
+// Usage
+const cache = new PaginationCache()
+
+async function getPaginatedUsers(page: number, perPage: number) {
+  const cacheKey = `users:active:count`
+  
+  const [users, total] = await Promise.all([
+    User.query()
+      .where('status', 'active')
+      .orderBy('createdAt', 'desc')
+      .offset((page - 1) * perPage)
+      .limit(perPage)
+      .all(),
+    
+    cache.getCachedCount(cacheKey, () => 
+      User.query().where('status', 'active').count()
+    )
+  ])
+
+  return {
+    data: users,
+    meta: {
+      total,
+      page,
+      perPage,
+      lastPage: Math.ceil(total / perPage)
+    }
+  }
+}
+```
+
+### Index Optimization
+
+```typescript
+// Optimize queries with proper indexes
+export default class User extends BaseModel {
+  static get indexes() {
+    return [
+      // Compound index for pagination queries
+      { status: 1, createdAt: -1 },
+      { status: 1, lastLoginAt: -1 },
+      
+      // Index for cursor pagination
+      { _id: -1 },
+      { publishedAt: -1, _id: -1 }
+    ]
+  }
+}
+```
+
+### Projection for Large Documents
+
+```typescript
+// Select only needed fields for pagination
+const result = await User.query()
+  .select('_id', 'name', 'email', 'status', 'createdAt')
+  .where('status', 'active')
+  .orderBy('createdAt', 'desc')
+  .paginate(page, perPage)
+
+// Avoid loading large fields in list views
+const posts = await Post.query()
+  .select('_id', 'title', 'excerpt', 'authorId', 'publishedAt')
+  .deselect('content') // Exclude large content field
+  .where('isPublished', true)
+  .paginate(page, perPage)
+```
+
+## Pagination with Relationships
+
+### Preloading Relationships
+
+```typescript
+// Paginate with preloaded relationships
+const result = await User.query()
+  .preload('profile', (query) => {
+    query.select('bio', 'avatar')
+  })
+  .preload('roles', (query) => {
+    query.select('name')
+  })
+  .where('status', 'active')
+  .paginate(page, perPage)
+```
+
+### Counting Related Records
+
+```typescript
+// Include relationship counts
+const result = await User.query()
+  .withCount('posts')
+  .withCount('posts', (query) => {
+    query.where('isPublished', true)
+  }, 'publishedPostsCount')
+  .where('status', 'active')
+  .paginate(page, perPage)
+
+// Access counts
+result.data.forEach(user => {
+  console.log(`${user.name} has ${user.$extras.posts_count} posts`)
+  console.log(`${user.name} has ${user.$extras.publishedPostsCount} published posts`)
+})
+```
+
+### Paginating Relationships
+
+```typescript
+// Paginate a user's posts
+const user = await User.findOrFail(userId)
+
+const userPosts = await user.related('posts')
+  .query()
+  .where('isPublished', true)
+  .orderBy('publishedAt', 'desc')
+  .paginate(page, perPage)
+```
+
+## Search with Pagination
+
+### Text Search Pagination
+
+```typescript
+// Paginate search results
+async function searchUsers(query: string, page: number, perPage: number) {
+  const result = await User.query()
+    .whereText(query)
+    .orderBy('score', { $meta: 'textScore' })
+    .paginate(page, perPage)
+
+  return result
+}
+
+// Advanced search with filters
+async function advancedSearch(
+  searchQuery: string,
+  filters: any,
+  page: number,
+  perPage: number
+) {
+  const query = User.query()
+
+  if (searchQuery) {
+    query.whereText(searchQuery)
+  }
+
+  if (filters.status) {
+    query.where('status', filters.status)
+  }
+
+  if (filters.role) {
+    query.whereIn('role', filters.role)
+  }
+
+  if (filters.dateRange) {
+    query.whereBetween('createdAt', [
+      filters.dateRange.start,
+      filters.dateRange.end
+    ])
+  }
+
+  return await query
+    .orderBy('createdAt', 'desc')
+    .paginate(page, perPage)
+}
+```
+
+### Aggregation Pagination
+
+```typescript
+// Paginate aggregation results
+async function getPaginatedUserStats(page: number, perPage: number) {
+  const skip = (page - 1) * perPage
+
+  const pipeline = [
+    {
+      $match: { status: 'active' }
+    },
+    {
+      $group: {
+        _id: '$role',
+        count: { $sum: 1 },
+        avgAge: { $avg: '$age' },
+        totalPosts: { $sum: '$postCount' }
+      }
+    },
+    {
+      $sort: { count: -1 }
+    },
+    {
+      $facet: {
+        data: [
+          { $skip: skip },
+          { $limit: perPage }
+        ],
+        totalCount: [
+          { $count: 'count' }
+        ]
+      }
+    }
+  ]
+
+  const [result] = await User.query().aggregate(pipeline)
+  const total = result.totalCount[0]?.count || 0
+
+  return {
+    data: result.data,
+    meta: {
+      total,
+      page,
+      perPage,
+      lastPage: Math.ceil(total / perPage)
+    }
+  }
+}
+```
+
+## Frontend Integration
+
+### API Response Format
+
+```typescript
+// Standardized pagination response
+export default class UserController {
+  public async index({ request, response }: HttpContextContract) {
+    const page = request.input('page', 1)
+    const perPage = request.input('per_page', 20)
+    const search = request.input('search')
+    const status = request.input('status')
+
+    const query = User.query()
+
+    if (search) {
+      query.where('name', 'like', `%${search}%`)
+        .orWhere('email', 'like', `%${search}%`)
+    }
+
+    if (status) {
+      query.where('status', status)
+    }
+
+    const result = await query
+      .orderBy('createdAt', 'desc')
+      .paginate(page, perPage)
+
+    // Transform for API response
+    return response.json({
+      data: result.data,
+      pagination: {
+        current_page: result.meta.page,
+        per_page: result.meta.perPage,
+        total: result.meta.total,
+        last_page: result.meta.lastPage,
+        has_next: result.meta.hasNext,
+        has_prev: result.meta.hasPrev,
+        from: result.meta.from,
+        to: result.meta.to
+      },
+      links: {
+        first: `/users?page=1&per_page=${perPage}`,
+        last: `/users?page=${result.meta.lastPage}&per_page=${perPage}`,
+        next: result.meta.hasNext ? `/users?page=${page + 1}&per_page=${perPage}` : null,
+        prev: result.meta.hasPrev ? `/users?page=${page - 1}&per_page=${perPage}` : null
+      }
+    })
+  }
+}
+```
+
+### Infinite Scroll Implementation
+
+```typescript
+// API endpoint for infinite scroll
+export default class PostController {
+  public async infiniteScroll({ request, response }: HttpContextContract) {
+    const cursor = request.input('cursor')
+    const limit = request.input('limit', 20)
+
+    const query = Post.query()
+      .where('isPublished', true)
+      .orderBy('publishedAt', 'desc')
+      .limit(limit + 1)
+
+    if (cursor) {
+      query.where('publishedAt', '<', cursor)
+    }
+
+    const posts = await query.all()
+    const hasNext = posts.length > limit
+
+    if (hasNext) {
+      posts.pop()
+    }
+
+    return response.json({
+      data: posts,
+      has_next: hasNext,
+      next_cursor: hasNext ? posts[posts.length - 1].publishedAt : null
+    })
+  }
+}
+```
+
+## Testing Pagination
+
+### Pagination Tests
+
+```typescript
+import { test } from '@japa/runner'
+import User from '#models/user'
+
+test.group('User pagination', (group) => {
+  group.each.setup(async () => {
+    // Create test data
+    await User.createMany(Array.from({ length: 50 }, (_, i) => ({
+      name: `User ${i + 1}`,
+      email: `user${i + 1}@example.com`,
+      status: i % 2 === 0 ? 'active' : 'inactive'
+    })))
+  })
+
+  test('should paginate users correctly', async ({ assert }) => {
+    const result = await User.query()
+      .where('status', 'active')
+      .paginate(1, 10)
+
+    assert.equal(result.data.length, 10)
+    assert.equal(result.meta.page, 1)
+    assert.equal(result.meta.perPage, 10)
+    assert.equal(result.meta.total, 25) // 25 active users
+    assert.equal(result.meta.lastPage, 3)
+    assert.isTrue(result.meta.hasNext)
+    assert.isFalse(result.meta.hasPrev)
+  })
+
+  test('should handle empty results', async ({ assert }) => {
+    const result = await User.query()
+      .where('status', 'deleted')
+      .paginate(1, 10)
+
+    assert.equal(result.data.length, 0)
+    assert.equal(result.meta.total, 0)
+    assert.equal(result.meta.lastPage, 0)
+    assert.isFalse(result.meta.hasNext)
+    assert.isFalse(result.meta.hasPrev)
+  })
+})
+```
+
+## Best Practices
+
+### Pagination Guidelines
+
+```typescript
+// 1. Always set reasonable limits
+const MAX_PER_PAGE = 100
+const DEFAULT_PER_PAGE = 20
+
+function validatePerPage(perPage: number): number {
+  return Math.min(Math.max(perPage || DEFAULT_PER_PAGE, 1), MAX_PER_PAGE)
+}
+
+// 2. Use cursor pagination for real-time data
+async function getRealtimePosts(cursor?: string) {
+  return await Post.query()
+    .where('isPublished', true)
+    .where(cursor ? { _id: { $lt: cursor } } : {})
+    .orderBy('_id', 'desc')
+    .limit(20)
+    .all()
+}
+
+// 3. Cache expensive counts
+const countCache = new Map()
+
+async function getCachedCount(key: string, query: () => Promise<number>) {
+  if (!countCache.has(key)) {
+    const count = await query()
+    countCache.set(key, count)
+    setTimeout(() => countCache.delete(key), 300000) // 5 minutes
+  }
+  return countCache.get(key)
+}
+```
+
+## Next Steps
+
+- **[Model Lifecycle](/docs/lifecycle)** - Understand pagination hooks
+- **[Query Builder](/docs/query-builder)** - Advanced query techniques
+- **[Performance Optimization](/docs/connections)** - Database performance tips
+- **[Examples: Advanced Queries](/examples/advanced-queries)** - Pagination examples

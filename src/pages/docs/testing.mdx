@@ -1,0 +1,750 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Testing
+description: Learn how to test your Adonis ODM models and database operations with comprehensive testing strategies
+---
+
+# Testing
+
+Testing is crucial for maintaining reliable applications. This guide covers testing strategies for Adonis ODM, including unit tests, integration tests, and testing best practices for MongoDB operations.
+
+## Test Setup
+
+### Basic Test Configuration
+
+```typescript
+// tests/bootstrap.ts
+import { configure } from '@japa/runner'
+import { assert } from '@japa/assert'
+import { expectTypeOf } from '@japa/expect-type'
+import { fileSystem } from '@japa/file-system'
+import { apiClient } from '@japa/api-client'
+
+configure({
+  plugins: [assert(), expectTypeOf(), fileSystem(), apiClient()],
+  
+  setup: [
+    () => import('../test-helpers/setup.js'),
+  ],
+  
+  teardown: [
+    () => import('../test-helpers/teardown.js'),
+  ],
+})
+```
+
+### Database Setup for Tests
+
+```typescript
+// test-helpers/setup.ts
+import Database from '@ioc:Adonis/Lucid/Database'
+import { ApplicationContract } from '@ioc:Adonis/Core/Application'
+
+export default async function setupTests(app: ApplicationContract) {
+  // Use test database
+  const testConnection = {
+    client: 'mongodb',
+    connection: {
+      host: process.env.MONGO_TEST_HOST || 'localhost',
+      port: process.env.MONGO_TEST_PORT || 27017,
+      database: process.env.MONGO_TEST_DATABASE || 'test_db',
+      username: process.env.MONGO_TEST_USERNAME,
+      password: process.env.MONGO_TEST_PASSWORD,
+    }
+  }
+
+  // Override default connection for tests
+  Database.manager.add('test', testConnection)
+  Database.manager.connect('test')
+}
+```
+
+### Test Cleanup
+
+```typescript
+// test-helpers/teardown.ts
+import Database from '@ioc:Adonis/Lucid/Database'
+
+export default async function teardownTests() {
+  // Clean up test database
+  await Database.manager.closeAll()
+}
+```
+
+## Model Testing
+
+### Basic Model Tests
+
+```typescript
+import { test } from '@japa/runner'
+import User from '#models/user'
+import { DateTime } from 'luxon'
+
+test.group('User Model', (group) => {
+  group.each.setup(async () => {
+    // Clean database before each test
+    await User.query().delete()
+  })
+
+  test('should create a user', async ({ assert }) => {
+    const userData = {
+      name: 'John Doe',
+      email: 'john@example.com',
+      age: 30
+    }
+
+    const user = await User.create(userData)
+
+    assert.exists(user._id)
+    assert.equal(user.name, userData.name)
+    assert.equal(user.email, userData.email)
+    assert.equal(user.age, userData.age)
+    assert.isTrue(user.$isPersisted)
+  })
+
+  test('should find user by email', async ({ assert }) => {
+    const user = await User.create({
+      name: 'Jane Doe',
+      email: 'jane@example.com',
+      age: 25
+    })
+
+    const foundUser = await User.findBy('email', 'jane@example.com')
+
+    assert.exists(foundUser)
+    assert.equal(foundUser!._id, user._id)
+    assert.equal(foundUser!.name, user.name)
+  })
+
+  test('should update user', async ({ assert }) => {
+    const user = await User.create({
+      name: 'Bob Smith',
+      email: 'bob@example.com',
+      age: 35
+    })
+
+    user.name = 'Robert Smith'
+    user.age = 36
+    await user.save()
+
+    const updatedUser = await User.findOrFail(user._id)
+    assert.equal(updatedUser.name, 'Robert Smith')
+    assert.equal(updatedUser.age, 36)
+  })
+
+  test('should delete user', async ({ assert }) => {
+    const user = await User.create({
+      name: 'Alice Johnson',
+      email: 'alice@example.com',
+      age: 28
+    })
+
+    await user.delete()
+
+    const deletedUser = await User.find(user._id)
+    assert.isNull(deletedUser)
+  })
+})
+```
+
+### Validation Testing
+
+```typescript
+import { test } from '@japa/runner'
+import { ValidationException } from 'adonis-odm'
+import User from '#models/user'
+
+test.group('User Validation', (group) => {
+  group.each.setup(async () => {
+    await User.query().delete()
+  })
+
+  test('should validate required fields', async ({ assert }) => {
+    await assert.rejects(
+      async () => {
+        await User.create({
+          // Missing required name field
+          email: 'test@example.com'
+        })
+      },
+      ValidationException
+    )
+  })
+
+  test('should validate email format', async ({ assert }) => {
+    await assert.rejects(
+      async () => {
+        await User.create({
+          name: 'Test User',
+          email: 'invalid-email'
+        })
+      },
+      ValidationException
+    )
+  })
+
+  test('should validate unique email', async ({ assert }) => {
+    await User.create({
+      name: 'First User',
+      email: 'unique@example.com'
+    })
+
+    await assert.rejects(
+      async () => {
+        await User.create({
+          name: 'Second User',
+          email: 'unique@example.com' // Duplicate email
+        })
+      }
+    )
+  })
+
+  test('should validate age range', async ({ assert }) => {
+    await assert.rejects(
+      async () => {
+        await User.create({
+          name: 'Young User',
+          email: 'young@example.com',
+          age: 12 // Below minimum age
+        })
+      },
+      ValidationException
+    )
+  })
+})
+```
+
+## Query Testing
+
+### Query Builder Tests
+
+```typescript
+import { test } from '@japa/runner'
+import User from '#models/user'
+
+test.group('User Queries', (group) => {
+  group.each.setup(async () => {
+    await User.query().delete()
+    
+    // Create test data
+    await User.createMany([
+      { name: 'John Doe', email: 'john@example.com', age: 30, status: 'active' },
+      { name: 'Jane Smith', email: 'jane@example.com', age: 25, status: 'active' },
+      { name: 'Bob Johnson', email: 'bob@example.com', age: 35, status: 'inactive' },
+      { name: 'Alice Brown', email: 'alice@example.com', age: 28, status: 'active' }
+    ])
+  })
+
+  test('should filter by status', async ({ assert }) => {
+    const activeUsers = await User.query()
+      .where('status', 'active')
+      .all()
+
+    assert.equal(activeUsers.length, 3)
+    activeUsers.forEach(user => {
+      assert.equal(user.status, 'active')
+    })
+  })
+
+  test('should filter by age range', async ({ assert }) => {
+    const youngUsers = await User.query()
+      .where('age', '<', 30)
+      .all()
+
+    assert.equal(youngUsers.length, 2)
+    youngUsers.forEach(user => {
+      assert.isBelow(user.age, 30)
+    })
+  })
+
+  test('should order by age', async ({ assert }) => {
+    const users = await User.query()
+      .orderBy('age', 'asc')
+      .all()
+
+    assert.equal(users.length, 4)
+    assert.equal(users[0].age, 25)
+    assert.equal(users[1].age, 28)
+    assert.equal(users[2].age, 30)
+    assert.equal(users[3].age, 35)
+  })
+
+  test('should paginate results', async ({ assert }) => {
+    const result = await User.query()
+      .orderBy('name', 'asc')
+      .paginate(1, 2)
+
+    assert.equal(result.data.length, 2)
+    assert.equal(result.meta.total, 4)
+    assert.equal(result.meta.page, 1)
+    assert.equal(result.meta.perPage, 2)
+    assert.equal(result.meta.lastPage, 2)
+  })
+
+  test('should count records', async ({ assert }) => {
+    const totalCount = await User.query().count()
+    const activeCount = await User.query().where('status', 'active').count()
+
+    assert.equal(totalCount, 4)
+    assert.equal(activeCount, 3)
+  })
+})
+```
+
+### Aggregation Tests
+
+```typescript
+import { test } from '@japa/runner'
+import User from '#models/user'
+
+test.group('User Aggregations', (group) => {
+  group.each.setup(async () => {
+    await User.query().delete()
+    
+    await User.createMany([
+      { name: 'John', department: 'IT', salary: 50000, age: 30 },
+      { name: 'Jane', department: 'IT', salary: 60000, age: 25 },
+      { name: 'Bob', department: 'HR', salary: 45000, age: 35 },
+      { name: 'Alice', department: 'HR', salary: 55000, age: 28 }
+    ])
+  })
+
+  test('should group by department', async ({ assert }) => {
+    const stats = await User.query()
+      .aggregate([
+        {
+          $group: {
+            _id: '$department',
+            count: { $sum: 1 },
+            avgSalary: { $avg: '$salary' },
+            avgAge: { $avg: '$age' }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ])
+
+    assert.equal(stats.length, 2)
+    
+    const itStats = stats.find(s => s._id === 'IT')
+    const hrStats = stats.find(s => s._id === 'HR')
+    
+    assert.equal(itStats.count, 2)
+    assert.equal(itStats.avgSalary, 55000)
+    
+    assert.equal(hrStats.count, 2)
+    assert.equal(hrStats.avgSalary, 50000)
+  })
+})
+```
+
+## Relationship Testing
+
+### Testing Model Relationships
+
+```typescript
+import { test } from '@japa/runner'
+import User from '#models/user'
+import Post from '#models/post'
+
+test.group('User-Post Relationships', (group) => {
+  group.each.setup(async () => {
+    await User.query().delete()
+    await Post.query().delete()
+  })
+
+  test('should create post with author', async ({ assert }) => {
+    const user = await User.create({
+      name: 'John Doe',
+      email: 'john@example.com'
+    })
+
+    const post = await Post.create({
+      title: 'Test Post',
+      content: 'This is a test post',
+      authorId: user._id
+    })
+
+    assert.equal(post.authorId, user._id)
+  })
+
+  test('should preload author with posts', async ({ assert }) => {
+    const user = await User.create({
+      name: 'Jane Doe',
+      email: 'jane@example.com'
+    })
+
+    await Post.createMany([
+      { title: 'Post 1', content: 'Content 1', authorId: user._id },
+      { title: 'Post 2', content: 'Content 2', authorId: user._id }
+    ])
+
+    const posts = await Post.query()
+      .preload('author')
+      .where('authorId', user._id)
+      .all()
+
+    assert.equal(posts.length, 2)
+    posts.forEach(post => {
+      assert.exists(post.author)
+      assert.equal(post.author.name, 'Jane Doe')
+    })
+  })
+
+  test('should query posts by author', async ({ assert }) => {
+    const user = await User.create({
+      name: 'Bob Smith',
+      email: 'bob@example.com'
+    })
+
+    await Post.createMany([
+      { title: 'Bob Post 1', content: 'Content 1', authorId: user._id },
+      { title: 'Bob Post 2', content: 'Content 2', authorId: user._id }
+    ])
+
+    const userPosts = await user.related('posts').query().all()
+
+    assert.equal(userPosts.length, 2)
+    userPosts.forEach(post => {
+      assert.equal(post.authorId, user._id)
+    })
+  })
+})
+```
+
+## Transaction Testing
+
+### Testing Database Transactions
+
+```typescript
+import { test } from '@japa/runner'
+import Database from '@ioc:Adonis/Lucid/Database'
+import User from '#models/user'
+import UserProfile from '#models/user_profile'
+
+test.group('Transactions', (group) => {
+  group.each.setup(async () => {
+    await User.query().delete()
+    await UserProfile.query().delete()
+  })
+
+  test('should commit transaction on success', async ({ assert }) => {
+    const result = await Database.transaction(async (trx) => {
+      const user = await User.create({
+        name: 'John Doe',
+        email: 'john@example.com'
+      }, { client: trx })
+
+      const profile = await UserProfile.create({
+        userId: user._id,
+        bio: 'Software developer'
+      }, { client: trx })
+
+      return { user, profile }
+    })
+
+    // Verify data was committed
+    const user = await User.find(result.user._id)
+    const profile = await UserProfile.find(result.profile._id)
+
+    assert.exists(user)
+    assert.exists(profile)
+    assert.equal(profile!.userId, user!._id)
+  })
+
+  test('should rollback transaction on error', async ({ assert }) => {
+    await assert.rejects(async () => {
+      await Database.transaction(async (trx) => {
+        await User.create({
+          name: 'Jane Doe',
+          email: 'jane@example.com'
+        }, { client: trx })
+
+        // Simulate error
+        throw new Error('Transaction failed')
+      })
+    })
+
+    // Verify rollback - no user should exist
+    const userCount = await User.query().count()
+    assert.equal(userCount, 0)
+  })
+
+  test('should handle nested transactions', async ({ assert }) => {
+    const result = await Database.transaction(async (outerTrx) => {
+      const user = await User.create({
+        name: 'Alice Johnson',
+        email: 'alice@example.com'
+      }, { client: outerTrx })
+
+      await Database.transaction(async (innerTrx) => {
+        await UserProfile.create({
+          userId: user._id,
+          bio: 'Product manager'
+        }, { client: innerTrx })
+      }, { client: outerTrx })
+
+      return user
+    })
+
+    const user = await User.find(result._id)
+    const profile = await UserProfile.findBy('userId', result._id)
+
+    assert.exists(user)
+    assert.exists(profile)
+  })
+})
+```
+
+## Embedded Documents Testing
+
+### Testing Nested Data
+
+```typescript
+import { test } from '@japa/runner'
+import Order from '#models/order'
+
+test.group('Order with Items', (group) => {
+  group.each.setup(async () => {
+    await Order.query().delete()
+  })
+
+  test('should create order with items', async ({ assert }) => {
+    const order = await Order.create({
+      customerId: 'customer123',
+      items: [
+        { productId: 'prod1', name: 'Product 1', quantity: 2, price: 10.00 },
+        { productId: 'prod2', name: 'Product 2', quantity: 1, price: 20.00 }
+      ],
+      total: 40.00
+    })
+
+    assert.exists(order._id)
+    assert.equal(order.items.length, 2)
+    assert.equal(order.items[0].quantity, 2)
+    assert.equal(order.items[1].price, 20.00)
+    assert.equal(order.total, 40.00)
+  })
+
+  test('should query orders by item properties', async ({ assert }) => {
+    await Order.createMany([
+      {
+        customerId: 'customer1',
+        items: [{ productId: 'prod1', name: 'Laptop', quantity: 1, price: 1000 }],
+        total: 1000
+      },
+      {
+        customerId: 'customer2',
+        items: [{ productId: 'prod2', name: 'Mouse', quantity: 2, price: 25 }],
+        total: 50
+      }
+    ])
+
+    const expensiveOrders = await Order.query()
+      .whereEmbedded('items', (query) => {
+        query.where('price', '>', 500)
+      })
+      .all()
+
+    assert.equal(expensiveOrders.length, 1)
+    assert.equal(expensiveOrders[0].customerId, 'customer1')
+  })
+})
+```
+
+## Performance Testing
+
+### Testing Query Performance
+
+```typescript
+import { test } from '@japa/runner'
+import User from '#models/user'
+
+test.group('Performance Tests', (group) => {
+  group.timeout(30000) // 30 second timeout for performance tests
+
+  test('should handle large dataset efficiently', async ({ assert }) => {
+    // Create large dataset
+    const users = Array.from({ length: 1000 }, (_, i) => ({
+      name: `User ${i}`,
+      email: `user${i}@example.com`,
+      age: 20 + (i % 50)
+    }))
+
+    const startTime = Date.now()
+    await User.createMany(users)
+    const createTime = Date.now() - startTime
+
+    // Test query performance
+    const queryStartTime = Date.now()
+    const activeUsers = await User.query()
+      .where('age', '>', 30)
+      .limit(100)
+      .all()
+    const queryTime = Date.now() - queryStartTime
+
+    assert.isBelow(createTime, 5000) // Should create 1000 users in under 5 seconds
+    assert.isBelow(queryTime, 1000)  // Should query in under 1 second
+    assert.isAtMost(activeUsers.length, 100)
+  })
+
+  test('should paginate efficiently', async ({ assert }) => {
+    // Create test data
+    const users = Array.from({ length: 500 }, (_, i) => ({
+      name: `User ${i}`,
+      email: `user${i}@example.com`,
+      age: 20 + (i % 50)
+    }))
+    await User.createMany(users)
+
+    const startTime = Date.now()
+    const result = await User.query()
+      .orderBy('name', 'asc')
+      .paginate(10, 20) // Page 10, 20 per page
+    const queryTime = Date.now() - startTime
+
+    assert.isBelow(queryTime, 500) // Should paginate in under 500ms
+    assert.equal(result.data.length, 20)
+    assert.equal(result.meta.page, 10)
+  })
+})
+```
+
+## Test Utilities
+
+### Custom Test Helpers
+
+```typescript
+// test-helpers/model-factory.ts
+import User from '#models/user'
+import Post from '#models/post'
+
+export class ModelFactory {
+  static async createUser(overrides: Partial<any> = {}) {
+    return await User.create({
+      name: 'Test User',
+      email: `test${Date.now()}@example.com`,
+      age: 25,
+      status: 'active',
+      ...overrides
+    })
+  }
+
+  static async createPost(authorId?: string, overrides: Partial<any> = {}) {
+    const author = authorId ? { _id: authorId } : await this.createUser()
+    
+    return await Post.create({
+      title: 'Test Post',
+      content: 'This is test content',
+      authorId: author._id,
+      isPublished: true,
+      ...overrides
+    })
+  }
+
+  static async createUserWithPosts(postCount: number = 3) {
+    const user = await this.createUser()
+    const posts = []
+
+    for (let i = 0; i < postCount; i++) {
+      const post = await this.createPost(user._id, {
+        title: `Post ${i + 1}`,
+        content: `Content for post ${i + 1}`
+      })
+      posts.push(post)
+    }
+
+    return { user, posts }
+  }
+}
+```
+
+### Database Assertions
+
+```typescript
+// test-helpers/database-assertions.ts
+import { Assert } from '@japa/assert'
+
+declare module '@japa/assert' {
+  interface Assert {
+    databaseHas(model: any, attributes: Record<string, any>): Promise<void>
+    databaseMissing(model: any, attributes: Record<string, any>): Promise<void>
+    databaseCount(model: any, expectedCount: number): Promise<void>
+  }
+}
+
+Assert.macro('databaseHas', async function (model, attributes) {
+  const record = await model.query().where(attributes).first()
+  this.exists(record, `Expected database to have record with ${JSON.stringify(attributes)}`)
+})
+
+Assert.macro('databaseMissing', async function (model, attributes) {
+  const record = await model.query().where(attributes).first()
+  this.isNull(record, `Expected database to not have record with ${JSON.stringify(attributes)}`)
+})
+
+Assert.macro('databaseCount', async function (model, expectedCount) {
+  const count = await model.query().count()
+  this.equal(count, expectedCount, `Expected ${expectedCount} records, got ${count}`)
+})
+```
+
+## Best Practices
+
+### 1. Test Organization
+
+```typescript
+// Good: Organize tests by feature/model
+test.group('User Authentication', () => {
+  // Authentication-related tests
+})
+
+test.group('User Profile Management', () => {
+  // Profile-related tests
+})
+
+// Good: Use descriptive test names
+test('should hash password before saving user', async ({ assert }) => {
+  // Test implementation
+})
+```
+
+### 2. Test Data Management
+
+```typescript
+// Good: Clean up after each test
+group.each.setup(async () => {
+  await User.query().delete()
+})
+
+// Good: Use factories for consistent test data
+const user = await ModelFactory.createUser({ age: 30 })
+```
+
+### 3. Assertion Patterns
+
+```typescript
+// Good: Test both positive and negative cases
+test('should validate email format', async ({ assert }) => {
+  // Test valid email
+  const user = await User.create({
+    name: 'Test',
+    email: 'valid@example.com'
+  })
+  assert.exists(user._id)
+
+  // Test invalid email
+  await assert.rejects(async () => {
+    await User.create({
+      name: 'Test',
+      email: 'invalid-email'
+    })
+  })
+})
+```
+
+## Next Steps
+
+- **[Error Handling](/docs/error-handling)** - Test error scenarios
+- **[Performance Optimization](/docs/performance)** - Performance testing strategies
+- **[Model Lifecycle](/docs/lifecycle)** - Test lifecycle hooks
+- **[Database Transactions](/docs/transactions)** - Transaction testing patterns

@@ -1,0 +1,481 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: CRUD Operations
+description: Learn how to perform Create, Read, Update, and Delete operations with Adonis ODM
+---
+
+# CRUD Operations
+
+CRUD (Create, Read, Update, Delete) operations are the foundation of data manipulation in Adonis ODM. This guide covers all the ways to perform these operations with your MongoDB documents.
+
+## Create Operations
+
+### Creating Single Documents
+
+#### Using the `create()` Method
+
+```typescript
+import User from '#models/user'
+
+// Create a new user
+const user = await User.create({
+  name: 'John Doe',
+  email: 'john@example.com',
+  age: 30
+})
+
+console.log(user._id) // MongoDB ObjectId
+console.log(user.$isPersisted) // true
+```
+
+#### Using Model Instances
+
+```typescript
+// Create instance and save
+const user = new User()
+user.name = 'Jane Smith'
+user.email = 'jane@example.com'
+user.age = 28
+
+await user.save()
+```
+
+#### With Validation
+
+```typescript
+// Using fill() for mass assignment
+const user = new User()
+user.fill({
+  name: 'Bob Wilson',
+  email: 'bob@example.com',
+  age: 35,
+  role: 'admin' // Only allowed fields will be filled
+})
+
+await user.save()
+```
+
+### Creating Multiple Documents
+
+#### Bulk Insert
+
+```typescript
+// Create multiple users at once
+const users = await User.createMany([
+  { name: 'Alice', email: 'alice@example.com', age: 25 },
+  { name: 'Bob', email: 'bob@example.com', age: 30 },
+  { name: 'Charlie', email: 'charlie@example.com', age: 35 }
+])
+
+console.log(users.length) // 3
+```
+
+#### Using Transactions
+
+```typescript
+import Database from '@ioc:Adonis/Lucid/Database'
+
+const trx = await Database.transaction()
+
+try {
+  const user = await User.create({
+    name: 'John Doe',
+    email: 'john@example.com'
+  }, { client: trx })
+
+  const profile = await UserProfile.create({
+    userId: user._id,
+    bio: 'Software developer'
+  }, { client: trx })
+
+  await trx.commit()
+} catch (error) {
+  await trx.rollback()
+  throw error
+}
+```
+
+## Read Operations
+
+### Finding Documents
+
+#### By Primary Key
+
+```typescript
+// Find by ID
+const user = await User.find('507f1f77bcf86cd799439011')
+
+// Find or fail (throws exception if not found)
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+
+// Find by multiple IDs
+const users = await User.findMany([
+  '507f1f77bcf86cd799439011',
+  '507f1f77bcf86cd799439012'
+])
+```
+
+#### Using Query Builder
+
+```typescript
+// Find first matching document
+const user = await User.query()
+  .where('email', 'john@example.com')
+  .first()
+
+// Find first or fail
+const user = await User.query()
+  .where('email', 'john@example.com')
+  .firstOrFail()
+
+// Find all matching documents
+const activeUsers = await User.query()
+  .where('status', 'active')
+  .all()
+```
+
+### Advanced Queries
+
+#### Conditional Queries
+
+```typescript
+// Complex conditions
+const users = await User.query()
+  .where('age', '>=', 18)
+  .where('status', 'active')
+  .whereIn('role', ['admin', 'moderator'])
+  .orderBy('createdAt', 'desc')
+  .limit(10)
+  .all()
+```
+
+#### Aggregation Queries
+
+```typescript
+// Count documents
+const userCount = await User.query().count()
+
+// Count with conditions
+const activeUserCount = await User.query()
+  .where('status', 'active')
+  .count()
+
+// Group by and count
+const usersByRole = await User.query()
+  .groupBy('role')
+  .count()
+```
+
+### Pagination
+
+```typescript
+// Paginate results
+const result = await User.query()
+  .where('status', 'active')
+  .orderBy('createdAt', 'desc')
+  .paginate(1, 20) // page 1, 20 per page
+
+console.log(result.data)        // Array of users
+console.log(result.meta.total)  // Total count
+console.log(result.meta.page)   // Current page
+console.log(result.meta.perPage) // Items per page
+console.log(result.meta.lastPage) // Last page number
+```
+
+## Update Operations
+
+### Updating Single Documents
+
+#### Using Model Instances
+
+```typescript
+// Find and update
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+user.name = 'John Smith'
+user.email = 'johnsmith@example.com'
+await user.save()
+
+// Using merge()
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+user.merge({
+  name: 'John Smith',
+  email: 'johnsmith@example.com'
+})
+await user.save()
+```
+
+#### Direct Updates
+
+```typescript
+// Update without fetching
+const affectedRows = await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .update({
+    name: 'John Smith',
+    updatedAt: new Date()
+  })
+
+// Update with conditions
+const affectedRows = await User.query()
+  .where('status', 'pending')
+  .where('createdAt', '<', DateTime.now().minus({ days: 7 }))
+  .update({ status: 'expired' })
+```
+
+### Updating Multiple Documents
+
+#### Bulk Updates
+
+```typescript
+// Update all matching documents
+const affectedRows = await User.query()
+  .where('role', 'user')
+  .where('isVerified', false)
+  .update({
+    status: 'pending_verification',
+    updatedAt: DateTime.now()
+  })
+
+// Update with complex conditions
+const affectedRows = await User.query()
+  .where('lastLoginAt', '<', DateTime.now().minus({ months: 6 }))
+  .update({
+    status: 'inactive',
+    inactiveAt: DateTime.now()
+  })
+```
+
+#### Conditional Updates
+
+```typescript
+// Update only if condition is met
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+
+if (user.status === 'pending') {
+  user.status = 'active'
+  user.activatedAt = DateTime.now()
+  await user.save()
+}
+```
+
+### Atomic Operations
+
+#### Increment/Decrement
+
+```typescript
+// Increment a field
+await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .increment('loginCount', 1)
+
+// Decrement a field
+await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .decrement('credits', 10)
+
+// Multiple increments
+await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .increment({
+    loginCount: 1,
+    profileViews: 5
+  })
+```
+
+#### Array Operations
+
+```typescript
+// Add to array
+await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .push('tags', 'premium')
+
+// Add multiple items to array
+await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .push('skills', ['javascript', 'typescript'])
+
+// Remove from array
+await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .pull('tags', 'trial')
+
+// Add to set (unique values only)
+await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .addToSet('interests', 'programming')
+```
+
+## Delete Operations
+
+### Deleting Single Documents
+
+#### Using Model Instances
+
+```typescript
+// Find and delete
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+await user.delete()
+
+console.log(user.$isDeleted) // true
+```
+
+#### Direct Deletion
+
+```typescript
+// Delete without fetching
+const affectedRows = await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .delete()
+
+// Delete with conditions
+const affectedRows = await User.query()
+  .where('status', 'banned')
+  .delete()
+```
+
+### Deleting Multiple Documents
+
+#### Bulk Deletion
+
+```typescript
+// Delete all matching documents
+const affectedRows = await User.query()
+  .where('status', 'inactive')
+  .where('lastLoginAt', '<', DateTime.now().minus({ years: 1 }))
+  .delete()
+
+// Delete with complex conditions
+const affectedRows = await User.query()
+  .where('isVerified', false)
+  .where('createdAt', '<', DateTime.now().minus({ days: 30 }))
+  .delete()
+```
+
+### Soft Deletes
+
+If your model uses soft deletes:
+
+```typescript
+// Soft delete (sets deletedAt timestamp)
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+await user.delete()
+
+// Force delete (permanently removes)
+await user.forceDelete()
+
+// Restore soft deleted
+await user.restore()
+
+// Query including soft deleted
+const allUsers = await User.query().withTrashed().all()
+
+// Query only soft deleted
+const deletedUsers = await User.query().onlyTrashed().all()
+```
+
+## Upsert Operations
+
+### Update or Create
+
+```typescript
+// Update if exists, create if not
+const user = await User.updateOrCreate(
+  { email: 'john@example.com' }, // Search criteria
+  { 
+    name: 'John Doe',
+    age: 30,
+    status: 'active'
+  } // Data to update/create
+)
+
+console.log(user.$isLocal) // false if updated, true if created
+```
+
+### First or Create
+
+```typescript
+// Find first matching or create new
+const user = await User.firstOrCreate(
+  { email: 'john@example.com' }, // Search criteria
+  { 
+    name: 'John Doe',
+    age: 30,
+    status: 'active'
+  } // Data for new record
+)
+```
+
+## Error Handling
+
+### Common Patterns
+
+```typescript
+try {
+  const user = await User.findOrFail('invalid-id')
+} catch (error) {
+  if (error.code === 'E_ROW_NOT_FOUND') {
+    // Handle not found
+    return response.notFound({ message: 'User not found' })
+  }
+  throw error
+}
+
+// Validation errors
+try {
+  const user = await User.create({
+    email: 'invalid-email' // Will fail validation
+  })
+} catch (error) {
+  if (error.code === 'E_VALIDATION_FAILURE') {
+    return response.badRequest({ errors: error.messages })
+  }
+  throw error
+}
+```
+
+## Performance Tips
+
+### Efficient Queries
+
+```typescript
+// Use select to limit fields
+const users = await User.query()
+  .select('name', 'email')
+  .where('status', 'active')
+  .all()
+
+// Use indexes for better performance
+const user = await User.query()
+  .where('email', 'john@example.com') // Ensure email is indexed
+  .first()
+
+// Batch operations for multiple updates
+const userIds = ['id1', 'id2', 'id3']
+await User.query()
+  .whereIn('_id', userIds)
+  .update({ status: 'processed' })
+```
+
+### Avoiding N+1 Queries
+
+```typescript
+// Load related data efficiently
+const users = await User.query()
+  .preload('profile')
+  .preload('posts')
+  .all()
+
+// Instead of loading in loops
+for (const user of users) {
+  // This would cause N+1 queries
+  // const profile = await user.related('profile').query().first()
+}
+```
+
+## Next Steps
+
+- **[Embedded Documents](/docs/embedded-documents)** - Work with nested document structures
+- **[Relationships](/docs/relationships)** - Define and query model relationships
+- **[Database Transactions](/docs/transactions)** - Ensure data consistency
+- **[Model Lifecycle](/docs/lifecycle)** - Understand model hooks and events

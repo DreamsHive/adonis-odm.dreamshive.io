@@ -1,0 +1,415 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Query Builder
+description: Learn how to build complex MongoDB queries using the fluent query builder in Adonis ODM
+---
+
+# Query Builder
+
+The Query Builder in Adonis ODM provides a fluent, chainable interface for building MongoDB queries. It's designed to be familiar to AdonisJS developers while leveraging MongoDB's powerful query capabilities.
+
+## Basic Usage
+
+### Creating Query Instances
+
+Start a query using the `query()` method on any model:
+
+```typescript
+import User from '#models/user'
+
+// Create a query builder instance
+const query = User.query()
+
+// Execute the query
+const users = await User.query().all()
+```
+
+### Simple Queries
+
+```typescript
+// Find all users
+const allUsers = await User.query().all()
+
+// Find first user
+const firstUser = await User.query().first()
+
+// Find user by ID
+const user = await User.query().find('507f1f77bcf86cd799439011')
+
+// Count documents
+const userCount = await User.query().count()
+```
+
+## Where Clauses
+
+### Basic Where Conditions
+
+```typescript
+// Simple equality
+const activeUsers = await User.query()
+  .where('status', 'active')
+  .all()
+
+// Using operators
+const adults = await User.query()
+  .where('age', '>=', 18)
+  .all()
+
+// Multiple conditions (AND)
+const results = await User.query()
+  .where('status', 'active')
+  .where('age', '>=', 18)
+  .all()
+```
+
+### Where Operators
+
+```typescript
+// Comparison operators
+await User.query().where('age', '>', 18)
+await User.query().where('age', '>=', 18)
+await User.query().where('age', '<', 65)
+await User.query().where('age', '<=', 65)
+await User.query().where('status', '!=', 'inactive')
+
+// Pattern matching
+await User.query().where('email', 'like', '%@gmail.com')
+await User.query().where('name', 'ilike', 'john%') // Case insensitive
+
+// Existence checks
+await User.query().whereExists('profilePicture')
+await User.query().whereNotExists('deletedAt')
+
+// Null checks
+await User.query().whereNull('deletedAt')
+await User.query().whereNotNull('email')
+```
+
+### Array and Range Queries
+
+```typescript
+// In/Not In
+await User.query().whereIn('role', ['admin', 'moderator'])
+await User.query().whereNotIn('status', ['banned', 'suspended'])
+
+// Between ranges
+await User.query().whereBetween('age', [18, 65])
+await User.query().whereNotBetween('score', [0, 50])
+
+// Array contains
+await User.query().whereArrayContains('tags', 'premium')
+await User.query().whereArrayContainsAny('skills', ['javascript', 'typescript'])
+```
+
+## Logical Operators
+
+### OR Conditions
+
+```typescript
+// Simple OR
+const users = await User.query()
+  .where('role', 'admin')
+  .orWhere('role', 'moderator')
+  .all()
+
+// Complex OR with callbacks
+const users = await User.query()
+  .where('status', 'active')
+  .orWhere((query) => {
+    query.where('role', 'admin').where('isVerified', true)
+  })
+  .all()
+```
+
+### Grouped Conditions
+
+```typescript
+// Grouping with parentheses
+const users = await User.query()
+  .where((query) => {
+    query.where('role', 'admin').orWhere('role', 'moderator')
+  })
+  .where('status', 'active')
+  .all()
+
+// Complex nested conditions
+const users = await User.query()
+  .where('status', 'active')
+  .where((query) => {
+    query
+      .where('role', 'admin')
+      .orWhere((subQuery) => {
+        subQuery.where('role', 'user').where('isPremium', true)
+      })
+  })
+  .all()
+```
+
+## MongoDB-Specific Queries
+
+### Text Search
+
+```typescript
+// Full-text search
+const posts = await Post.query()
+  .whereText('mongodb tutorial')
+  .all()
+
+// Text search with options
+const posts = await Post.query()
+  .whereText('mongodb tutorial', {
+    caseSensitive: false,
+    diacriticSensitive: false
+  })
+  .all()
+```
+
+### Geospatial Queries
+
+```typescript
+// Near a point
+const locations = await Location.query()
+  .whereNear('coordinates', {
+    geometry: { type: 'Point', coordinates: [-73.9857, 40.7484] },
+    maxDistance: 1000 // meters
+  })
+  .all()
+
+// Within a polygon
+const locations = await Location.query()
+  .whereGeoWithin('coordinates', {
+    type: 'Polygon',
+    coordinates: [[
+      [-74.0, 40.7], [-74.0, 40.8], [-73.9, 40.8], [-73.9, 40.7], [-74.0, 40.7]
+    ]]
+  })
+  .all()
+```
+
+### Regular Expressions
+
+```typescript
+// Using regex patterns
+const users = await User.query()
+  .whereRegex('email', /^[a-zA-Z0-9._%+-]+@gmail\.com$/)
+  .all()
+
+// Case-insensitive regex
+const users = await User.query()
+  .whereRegex('name', /^john/i)
+  .all()
+```
+
+## Sorting and Limiting
+
+### Order By
+
+```typescript
+// Single field sorting
+const users = await User.query()
+  .orderBy('createdAt', 'desc')
+  .all()
+
+// Multiple field sorting
+const users = await User.query()
+  .orderBy('status', 'asc')
+  .orderBy('createdAt', 'desc')
+  .all()
+
+// Sort by nested field
+const users = await User.query()
+  .orderBy('profile.lastLoginAt', 'desc')
+  .all()
+```
+
+### Limiting Results
+
+```typescript
+// Limit number of results
+const recentUsers = await User.query()
+  .orderBy('createdAt', 'desc')
+  .limit(10)
+  .all()
+
+// Skip and limit (pagination)
+const users = await User.query()
+  .skip(20)
+  .limit(10)
+  .all()
+
+// Using offset (alias for skip)
+const users = await User.query()
+  .offset(20)
+  .limit(10)
+  .all()
+```
+
+## Field Selection
+
+### Selecting Specific Fields
+
+```typescript
+// Select specific fields
+const users = await User.query()
+  .select('name', 'email')
+  .all()
+
+// Select with array
+const users = await User.query()
+  .select(['name', 'email', 'createdAt'])
+  .all()
+
+// Exclude fields
+const users = await User.query()
+  .select('*')
+  .deselect('password', 'secretKey')
+  .all()
+```
+
+### Nested Field Selection
+
+```typescript
+// Select nested fields
+const users = await User.query()
+  .select('name', 'profile.avatar', 'profile.bio')
+  .all()
+
+// Select array elements
+const posts = await Post.query()
+  .select('title', 'tags.0', 'tags.1') // First two tags
+  .all()
+```
+
+## Aggregation
+
+### Basic Aggregation
+
+```typescript
+// Count
+const userCount = await User.query().count()
+
+// Count with conditions
+const activeUserCount = await User.query()
+  .where('status', 'active')
+  .count()
+
+// Distinct values
+const roles = await User.query().distinct('role')
+
+// Group by
+const usersByRole = await User.query()
+  .groupBy('role')
+  .count()
+```
+
+### Advanced Aggregation
+
+```typescript
+// Custom aggregation pipeline
+const stats = await User.query()
+  .aggregate([
+    { $match: { status: 'active' } },
+    { $group: { 
+      _id: '$role', 
+      count: { $sum: 1 },
+      avgAge: { $avg: '$age' }
+    }},
+    { $sort: { count: -1 } }
+  ])
+
+// Using aggregation helpers
+const monthlyStats = await User.query()
+  .groupBy({
+    year: { $year: '$createdAt' },
+    month: { $month: '$createdAt' }
+  })
+  .count()
+  .orderBy('year', 'desc')
+  .orderBy('month', 'desc')
+```
+
+## Query Execution
+
+### Execution Methods
+
+```typescript
+// Get all results
+const users = await User.query().all()
+
+// Get first result
+const user = await User.query().first()
+
+// Get first or fail
+const user = await User.query().firstOrFail()
+
+// Find by ID
+const user = await User.query().find('507f1f77bcf86cd799439011')
+
+// Find or fail
+const user = await User.query().findOrFail('507f1f77bcf86cd799439011')
+
+// Check if exists
+const exists = await User.query().where('email', 'john@example.com').exists()
+```
+
+### Pagination
+
+```typescript
+// Simple pagination
+const result = await User.query()
+  .where('status', 'active')
+  .paginate(1, 20) // page 1, 20 per page
+
+// Pagination result structure
+console.log(result.data)        // Array of users
+console.log(result.meta.total)  // Total count
+console.log(result.meta.page)   // Current page
+console.log(result.meta.perPage) // Items per page
+```
+
+## Raw Queries
+
+### Using Raw MongoDB Queries
+
+```typescript
+// Raw find query
+const users = await User.query()
+  .raw({
+    status: 'active',
+    age: { $gte: 18 }
+  })
+
+// Raw aggregation
+const result = await User.query()
+  .rawAggregate([
+    { $match: { status: 'active' } },
+    { $group: { _id: '$role', count: { $sum: 1 } } }
+  ])
+```
+
+## Query Debugging
+
+### Debug Information
+
+```typescript
+// Enable query logging
+const users = await User.query()
+  .debug()
+  .where('status', 'active')
+  .all()
+
+// Get query without executing
+const queryInfo = User.query()
+  .where('status', 'active')
+  .toQuery()
+
+console.log(queryInfo.filter)  // MongoDB filter
+console.log(queryInfo.options) // Query options
+```
+
+## Next Steps
+
+- **[CRUD Operations](/docs/crud-operations)** - Learn about Create, Read, Update, Delete operations
+- **[Embedded Documents](/docs/embedded-documents)** - Work with nested document structures
+- **[Relationships](/docs/relationships)** - Define and query model relationships
+- **[Query Builder API](/api/query-builder)** - Complete API reference

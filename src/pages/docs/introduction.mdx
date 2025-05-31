@@ -1,0 +1,174 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Introduction
+description: Learn about Adonis ODM, a comprehensive MongoDB Object Document Mapper for AdonisJS v6
+---
+
+# Introduction
+
+A comprehensive MongoDB Object Document Mapper (ODM) for AdonisJS v6 that provides a familiar Lucid ORM-like interface for working with MongoDB databases. Built with TypeScript for maximum type safety and developer experience.
+
+## What is Adonis ODM?
+
+Adonis ODM bridges the gap between AdonisJS applications and MongoDB databases by providing a 100% Lucid ORM-compatible interface while leveraging MongoDB's unique capabilities like embedded documents and flexible schemas.
+
+## ✨ Features
+
+### Core Features
+
+- 🎯 **Familiar API**: 100% Lucid ORM-compatible interface for easy adoption
+- 🏗️ **Decorator-based Models**: Use decorators to define your model schema and relationships
+- 🔍 **Fluent Query Builder**: Chainable query methods with MongoDB-specific operations
+- 📅 **Automatic Timestamps**: Auto-managed `createdAt` and `updatedAt` fields
+- 🔄 **Model Lifecycle**: Track model state with `$isPersisted`, `$dirty`, etc.
+- 📄 **Pagination**: Built-in pagination support with metadata
+- 🔗 **Connection Management**: Multiple MongoDB connection support
+- 🛡️ **Type Safety**: Full TypeScript support with IntelliSense and compile-time checking
+
+### Advanced Features
+
+- 💾 **Database Transactions**: Full ACID transaction support with managed and manual modes
+- 📦 **Embedded Documents**: Type-safe embedded document support with full CRUD operations
+- 🔗 **Relationships**: Type-safe referenced relationships (@hasOne, @hasMany, @belongsTo)
+- 🪝 **Lifecycle Hooks**: Comprehensive hook system (beforeSave, afterSave, beforeCreate, etc.)
+- 🔍 **Advanced Querying**: Complex filtering, aggregation, and embedded document querying
+- ⚡ **Performance**: Bulk operations, connection pooling, and optimized queries
+- 🛠️ **CLI Tools**: Ace commands for model generation and database operations
+- 🧪 **Testing Support**: Built-in testing utilities and Docker integration
+
+## Quick Example
+
+### Familiar Lucid-style Syntax
+
+```typescript
+// Query with familiar Lucid syntax
+const users = await User.query()
+  .where("age", ">=", 18)
+  .where("email", "like", "%@gmail.com")
+  .orderBy("createdAt", "desc")
+  .paginate(1, 10);
+```
+
+### Decorator-based Models
+
+```typescript
+import { BaseModel, column } from "adonis-odm";
+import { DateTime } from "luxon";
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare name: string;
+
+  @column()
+  declare email: string;
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime;
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime;
+}
+```
+
+### Embedded Documents with Type Safety
+
+```typescript
+// Single embedded document
+@column.embedded(() => Profile, 'single')
+declare profile?: EmbeddedSingle<typeof Profile>
+
+// Array of embedded documents
+@column.embedded(() => Address, 'many')
+declare addresses?: EmbeddedMany<typeof Address>
+
+// Query embedded documents with full IntelliSense
+const users = await User.query()
+  .embed('addresses', (addressQuery) => {
+    addressQuery
+      .where('city', 'New York')
+      .where('isActive', true)
+      .orderBy('createdAt', 'desc')
+  })
+  .all()
+```
+
+### ACID Transactions
+
+```typescript
+import db from "adonis-odm/services/db";
+
+// Managed transaction (recommended)
+const result = await db.transaction(async (trx) => {
+  const user = await User.create(
+    {
+      name: "John Doe",
+      email: "john@example.com",
+    },
+    { client: trx }
+  );
+
+  const profile = await Profile.create(
+    {
+      userId: user._id,
+      firstName: "John",
+      lastName: "Doe",
+    },
+    { client: trx }
+  );
+
+  return { user, profile };
+});
+```
+
+## Why Choose Adonis ODM?
+
+### For AdonisJS Developers
+
+- **Seamless Integration**: Built specifically for AdonisJS v6
+- **Familiar Patterns**: Uses the same conventions as Lucid ORM
+- **Type Safety**: Full TypeScript support with IntelliSense
+- **Consistent API**: Same patterns for models, queries, and relationships
+
+### For MongoDB Users
+
+- **Native MongoDB Features**: Leverages MongoDB's document model
+- **Embedded Documents**: First-class support for nested data structures
+- **Flexible Schema**: Dynamic schema capabilities when needed
+- **Performance**: Optimized queries and connection management
+
+### For Teams
+
+- **Developer Experience**: Intuitive API reduces learning curve
+- **Maintainable Code**: Clear patterns and conventions
+- **Scalable**: Built for production applications
+- **Well Documented**: Comprehensive documentation and examples
+
+## Getting Started
+
+Ready to start using Adonis ODM? Here's what you need to do:
+
+1. **[Install Adonis ODM](/docs/installation)** - Add the package to your AdonisJS project
+2. **[Configure the ODM](/docs/configuration)** - Set up your MongoDB connections
+3. **[Create Your First Model](/docs/models)** - Define your data models
+4. **[Start Querying](/docs/query-builder)** - Learn the query builder API
+
+## Requirements
+
+- **AdonisJS**: v6.0.0 or higher
+- **MongoDB**: v4.0.0 or higher (for transaction support)
+- **Node.js**: v18.0.0 or higher
+- **TypeScript**: v4.5.0 or higher
+
+## Community and Support
+
+- **GitHub**: [DreamsHive/adonis-odm](https://github.com/DreamsHive/adonis-odm)
+- **Issues**: [Report bugs and request features](https://github.com/DreamsHive/adonis-odm/issues)
+- **Discussions**: [Community discussions](https://github.com/DreamsHive/adonis-odm/discussions)
+- **npm**: [Package on npm](https://www.npmjs.com/package/adonis-odm)
+
+## License
+
+Adonis ODM is open-source software licensed under the [MIT License](https://opensource.org/licenses/MIT).

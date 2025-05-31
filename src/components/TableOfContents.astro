@@ -1,0 +1,183 @@
+---
+// Table of Contents component
+// This will be populated dynamically by JavaScript on the client side
+---
+
+<div class="toc-container">
+  <div class="mb-4">
+    <h4 class="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide">
+      On this page
+    </h4>
+  </div>
+  <nav id="table-of-contents" class="toc">
+    <!-- Table of contents will be populated by JavaScript -->
+  </nav>
+</div>
+
+<script>
+  // Generate table of contents from headings
+  function generateTableOfContents() {
+    const toc = document.getElementById('table-of-contents');
+    if (!toc) return;
+
+    // Find all headings in the main content
+    const headings = document.querySelectorAll('article h2, article h3, article h4');
+
+    if (headings.length === 0) {
+      toc.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">No headings found</p>';
+      return;
+    }
+
+    let tocHTML = '';
+
+    headings.forEach((heading, index) => {
+      // Create an ID for the heading if it doesn't have one
+      if (!heading.id) {
+        heading.id = `heading-${index}`;
+      }
+
+      const level = parseInt(heading.tagName.charAt(1));
+      const text = heading.textContent || '';
+      const href = `#${heading.id}`;
+
+      // Determine indentation based on heading level
+      let indentClass = '';
+      if (level === 3) indentClass = 'ml-4';
+      if (level === 4) indentClass = 'ml-8';
+
+      tocHTML += `
+        <a
+          href="${href}"
+          class="toc-link block py-1 px-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800 ${indentClass}"
+          data-heading-id="${heading.id}"
+        >
+          ${text}
+        </a>
+      `;
+    });
+
+    toc.innerHTML = tocHTML;
+
+    // Add click handlers for smooth scrolling
+    const tocLinks = toc.querySelectorAll('.toc-link');
+    tocLinks.forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = link.getAttribute('data-heading-id');
+        if (!targetId) return;
+
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          // Smooth scroll to the target
+          targetElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
+
+          // Update URL hash
+          history.pushState(null, '', `#${targetId}`);
+
+          // Update active state
+          updateActiveHeading(targetId);
+        }
+      });
+    });
+
+    // Set up intersection observer for active heading tracking
+    setupIntersectionObserver();
+  }
+
+  function updateActiveHeading(activeId: string) {
+    const tocLinks = document.querySelectorAll('.toc-link');
+    tocLinks.forEach(link => {
+      const headingId = link.getAttribute('data-heading-id');
+      if (headingId === activeId) {
+        link.classList.add('active', 'text-primary-600', 'bg-primary-50', 'dark:text-primary-400', 'dark:bg-primary-900/20');
+        link.classList.remove('text-gray-600', 'dark:text-gray-400');
+      } else {
+        link.classList.remove('active', 'text-primary-600', 'bg-primary-50', 'dark:text-primary-400', 'dark:bg-primary-900/20');
+        link.classList.add('text-gray-600', 'dark:text-gray-400');
+      }
+    });
+  }
+
+  function setupIntersectionObserver() {
+    const headings = document.querySelectorAll('article h2, article h3, article h4');
+
+    if (headings.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let activeHeading: string | null = null;
+
+        // Find the heading that's most visible
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            activeHeading = (entry.target as HTMLElement).id;
+          }
+        });
+
+        // If no heading is intersecting, find the one closest to the top
+        if (!activeHeading) {
+          let closestHeading: string | null = null;
+          let closestDistance = Infinity;
+
+          headings.forEach(heading => {
+            const rect = heading.getBoundingClientRect();
+            const distance = Math.abs(rect.top);
+
+            if (distance < closestDistance && rect.top <= 100) {
+              closestDistance = distance;
+              closestHeading = heading.id;
+            }
+          });
+
+          activeHeading = closestHeading;
+        }
+
+        if (activeHeading) {
+          updateActiveHeading(activeHeading);
+        }
+      },
+      {
+        rootMargin: '-20px 0px -80% 0px',
+        threshold: 0
+      }
+    );
+
+    headings.forEach(heading => {
+      observer.observe(heading);
+    });
+  }
+
+  // Initialize table of contents when DOM is loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', generateTableOfContents);
+  } else {
+    generateTableOfContents();
+  }
+
+  // Re-generate TOC when navigating between pages (for SPA-like behavior)
+  document.addEventListener('astro:page-load', generateTableOfContents);
+</script>
+
+<style>
+  .toc-container {
+    max-height: calc(100vh - 8rem);
+    overflow-y: auto;
+  }
+
+  .toc-link {
+    transition: all 0.2s ease;
+    border-left: 2px solid transparent;
+  }
+
+  .toc-link.active {
+    border-left-color: rgb(59 130 246);
+  }
+
+  .dark .toc-link.active {
+    border-left-color: rgb(96 165 250);
+  }
+</style>

@@ -1,0 +1,293 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Installation
+description: Learn how to install and configure Adonis ODM in your AdonisJS v6 project
+---
+
+import PackageManagerTabs from "../../components/PackageManagerTabs.astro";
+
+# Installation
+
+This guide will walk you through installing and setting up Adonis ODM in your AdonisJS v6 project.
+
+## Prerequisites
+
+Before installing Adonis ODM, make sure you have:
+
+- **AdonisJS v6**: A working AdonisJS v6 project
+- **MongoDB**: MongoDB server running (v4.0+ for transaction support)
+- **Node.js**: v18.0.0 or higher
+- **TypeScript**: v4.5.0 or higher
+
+## Step 1: Install the Package
+
+Install Adonis ODM from the npm registry using your preferred package manager:
+
+<PackageManagerTabs packageName="adonis-odm" />
+
+## Step 2: Configure the Package
+
+After installation, configure the package by running the following ace command:
+
+```bash
+node ace configure adonis-odm
+```
+
+This command will:
+
+1. **Register the MongoDB provider** inside the `adonisrc.ts` file
+2. **Create the configuration file** at `config/odm.ts`
+3. **Add environment variables** to your `.env` file
+4. **Set up validation rules** for environment variables
+
+## Step 3: Environment Variables
+
+The configure command will add the following environment variables to your `.env` file:
+
+```env
+# Basic Connection Settings
+MONGO_HOST=localhost
+MONGO_PORT=27017
+MONGO_DATABASE=your_database_name
+MONGO_URI=mongodb://localhost:27017/your_database_name
+
+# Authentication (optional)
+MONGO_USERNAME=your_username
+MONGO_PASSWORD=your_password
+
+# Connection Pool Settings (optional)
+MONGO_MAX_POOL_SIZE=10
+MONGO_MIN_POOL_SIZE=0
+MONGO_MAX_IDLE_TIME_MS=30000
+MONGO_SERVER_SELECTION_TIMEOUT_MS=5000
+MONGO_SOCKET_TIMEOUT_MS=0
+MONGO_CONNECT_TIMEOUT_MS=10000
+```
+
+### Environment Variable Options
+
+| Variable                            | Description                   | Default          |
+| ----------------------------------- | ----------------------------- | ---------------- |
+| `MONGO_HOST`                        | MongoDB server hostname       | `localhost`      |
+| `MONGO_PORT`                        | MongoDB server port           | `27017`          |
+| `MONGO_DATABASE`                    | Database name                 | Required         |
+| `MONGO_URI`                         | Full MongoDB connection URI   | Optional         |
+| `MONGO_MAX_POOL_SIZE`               | Maximum connections in pool   | `10`             |
+| `MONGO_MIN_POOL_SIZE`               | Minimum connections in pool   | `0`              |
+| `MONGO_MAX_IDLE_TIME_MS`            | Max idle time for connections | `30000`          |
+| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | Server selection timeout      | `5000`           |
+| `MONGO_SOCKET_TIMEOUT_MS`           | Socket timeout                | `0` (no timeout) |
+| `MONGO_CONNECT_TIMEOUT_MS`          | Connection timeout            | `10000`          |
+
+## Step 4: Configuration File
+
+The configuration file will be created at `config/odm.ts`:
+
+```typescript
+import env from "#start/env";
+import { defineConfig } from "adonis-odm";
+
+const odmConfig = defineConfig({
+  connection: "mongodb",
+
+  connections: {
+    mongodb: {
+      client: "mongodb",
+      connection: {
+        // Option 1: Use a full URI
+        url: env.get("MONGO_URI"),
+
+        // Option 2: Use individual components (if url is not provided)
+        host: env.get("MONGO_HOST", "localhost"),
+        port: env.get("MONGO_PORT", 27017),
+        database: env.get("MONGO_DATABASE"),
+
+        // MongoDB connection options
+        options: {
+          maxPoolSize: env.get("MONGO_MAX_POOL_SIZE", 10),
+          minPoolSize: env.get("MONGO_MIN_POOL_SIZE", 0),
+          maxIdleTimeMS: env.get("MONGO_MAX_IDLE_TIME_MS", 30000),
+          serverSelectionTimeoutMS: env.get(
+            "MONGO_SERVER_SELECTION_TIMEOUT_MS",
+            5000
+          ),
+          socketTimeoutMS: env.get("MONGO_SOCKET_TIMEOUT_MS", 0),
+          connectTimeoutMS: env.get("MONGO_CONNECT_TIMEOUT_MS", 10000),
+        },
+      },
+    },
+  },
+});
+
+export default odmConfig;
+```
+
+## Step 5: Verify Installation
+
+To verify that Adonis ODM is properly installed and configured, you can:
+
+### 1. Check the Provider Registration
+
+Ensure the provider is registered in your `adonisrc.ts` file:
+
+```typescript
+{
+  providers: [
+    // ... other providers
+    () => import("adonis-odm/provider"),
+  ];
+}
+```
+
+### 2. Test the Connection
+
+Create a simple test to verify the database connection:
+
+```typescript
+// In a controller or route
+import db from "adonis-odm/services/db";
+
+export default class TestController {
+  async testConnection() {
+    try {
+      // Test the connection
+      const client = db.connection();
+      const database = db.db();
+
+      // Simple ping test
+      await database.admin().ping();
+
+      return { status: "Connected to MongoDB successfully!" };
+    } catch (error) {
+      return { status: "Connection failed", error: error.message };
+    }
+  }
+}
+```
+
+## Multiple Connections
+
+You can configure multiple MongoDB connections by adding them to the `connections` object:
+
+```typescript
+const odmConfig = defineConfig({
+  connection: "primary",
+
+  connections: {
+    primary: {
+      client: "mongodb",
+      connection: {
+        url: env.get("MONGO_PRIMARY_URI"),
+      },
+    },
+
+    analytics: {
+      client: "mongodb",
+      connection: {
+        url: env.get("MONGO_ANALYTICS_URI"),
+      },
+    },
+
+    cache: {
+      client: "mongodb",
+      connection: {
+        url: env.get("MONGO_CACHE_URI"),
+      },
+    },
+  },
+});
+```
+
+## Connection URI Formats
+
+Adonis ODM supports various MongoDB connection URI formats:
+
+### Local Development
+
+```
+mongodb://localhost:27017/myapp
+```
+
+### With Authentication
+
+```
+mongodb://username:password@localhost:27017/myapp
+```
+
+### MongoDB Atlas
+
+```
+mongodb+srv://username:password@cluster.mongodb.net/myapp
+```
+
+### Replica Set
+
+```
+mongodb://host1:27017,host2:27017,host3:27017/myapp?replicaSet=myReplicaSet
+```
+
+## Transaction Requirements
+
+For transaction support, ensure your MongoDB setup meets these requirements:
+
+- **MongoDB 4.0+**: Transactions require MongoDB version 4.0 or higher
+- **Replica Set or Sharded Cluster**: Transactions are not supported on standalone instances
+- **Storage Engine**: WiredTiger storage engine (default in MongoDB 3.2+)
+
+### Setting up a Replica Set for Development
+
+For local development with transaction support:
+
+```bash
+# Start MongoDB with replica set
+mongod --replSet rs0 --dbpath /data/db
+
+# In MongoDB shell, initialize the replica set
+mongo
+> rs.initiate()
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Connection Refused
+
+```
+Error: connect ECONNREFUSED 127.0.0.1:27017
+```
+
+**Solution**: Ensure MongoDB is running on the specified host and port.
+
+#### Authentication Failed
+
+```
+Error: Authentication failed
+```
+
+**Solution**: Check your username, password, and database permissions.
+
+#### Transaction Not Supported
+
+```
+Error: Transactions are not supported by this deployment
+```
+
+**Solution**: Ensure you're using a replica set or sharded cluster, not a standalone instance.
+
+#### Environment Variables Not Found
+
+```
+Error: E_MISSING_ENV_VARIABLE
+```
+
+**Solution**: Ensure all required environment variables are set in your `.env` file.
+
+## Next Steps
+
+Now that Adonis ODM is installed and configured:
+
+- **[Learn about Configuration](/docs/configuration)** - Explore advanced configuration options
+- **[Create Your First Model](/docs/models)** - Start defining your data models
+- **[Explore Commands](/docs/commands)** - Learn about available ace commands
+- **[Start Querying](/docs/query-builder)** - Begin building queries

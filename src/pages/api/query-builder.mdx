@@ -1,0 +1,713 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Query Builder API
+description: Complete API reference for the Query Builder in Adonis ODM
+---
+
+# Query Builder API Reference
+
+The Query Builder provides a fluent interface for building MongoDB queries. This reference covers all available methods and their usage.
+
+## Class Definition
+
+```typescript
+class ModelQueryBuilder<Model extends BaseModel> {
+  // Query building methods
+  where(field: string, value: any): this
+  where(field: string, operator: string, value: any): this
+  where(callback: (query: this) => void): this
+  
+  orWhere(field: string, value: any): this
+  orWhere(field: string, operator: string, value: any): this
+  orWhere(callback: (query: this) => void): this
+  
+  // Execution methods
+  all(): Promise<Model[]>
+  first(): Promise<Model | null>
+  firstOrFail(): Promise<Model>
+  find(id: string): Promise<Model | null>
+  findOrFail(id: string): Promise<Model>
+  
+  // Aggregation methods
+  count(): Promise<number>
+  paginate(page: number, perPage: number): Promise<PaginationResult<Model>>
+}
+```
+
+## Where Clauses
+
+### `where(field, value)`
+
+Add a basic where clause to the query.
+
+```typescript
+where(field: string, value: any): this
+```
+
+**Parameters:**
+- `field` - The field name to filter on
+- `value` - The value to match
+
+**Example:**
+```typescript
+const users = await User.query()
+  .where('status', 'active')
+  .all()
+```
+
+### `where(field, operator, value)`
+
+Add a where clause with a comparison operator.
+
+```typescript
+where(field: string, operator: WhereOperator, value: any): this
+```
+
+**Operators:**
+- `'='`, `'=='` - Equality
+- `'!='`, `'<>'` - Not equal
+- `'>'` - Greater than
+- `'>='` - Greater than or equal
+- `'<'` - Less than
+- `'<='` - Less than or equal
+- `'like'` - Pattern matching
+- `'ilike'` - Case-insensitive pattern matching
+- `'in'` - Value in array
+- `'not in'` - Value not in array
+- `'between'` - Value between range
+- `'not between'` - Value not between range
+- `'exists'` - Field exists
+- `'not exists'` - Field doesn't exist
+- `'null'` - Field is null
+- `'not null'` - Field is not null
+
+**Examples:**
+```typescript
+// Comparison operators
+await User.query().where('age', '>', 18).all()
+await User.query().where('age', '>=', 21).all()
+await User.query().where('status', '!=', 'banned').all()
+
+// Pattern matching
+await User.query().where('email', 'like', '%@gmail.com').all()
+await User.query().where('name', 'ilike', 'john%').all()
+
+// Array operations
+await User.query().where('role', 'in', ['admin', 'moderator']).all()
+await User.query().where('status', 'not in', ['banned', 'suspended']).all()
+
+// Range operations
+await User.query().where('age', 'between', [18, 65]).all()
+await User.query().where('score', 'not between', [0, 50]).all()
+
+// Existence checks
+await User.query().where('profilePicture', 'exists').all()
+await User.query().where('deletedAt', 'not exists').all()
+
+// Null checks
+await User.query().where('deletedAt', 'null').all()
+await User.query().where('email', 'not null').all()
+```
+
+### `where(callback)`
+
+Add a grouped where clause using a callback.
+
+```typescript
+where(callback: (query: this) => void): this
+```
+
+**Example:**
+```typescript
+const users = await User.query()
+  .where('status', 'active')
+  .where((query) => {
+    query.where('role', 'admin').orWhere('role', 'moderator')
+  })
+  .all()
+```
+
+## OR Where Clauses
+
+### `orWhere(field, value)`
+
+Add an OR where clause.
+
+```typescript
+orWhere(field: string, value: any): this
+orWhere(field: string, operator: string, value: any): this
+orWhere(callback: (query: this) => void): this
+```
+
+**Examples:**
+```typescript
+// Simple OR
+await User.query()
+  .where('role', 'admin')
+  .orWhere('role', 'moderator')
+  .all()
+
+// OR with operator
+await User.query()
+  .where('age', '>', 65)
+  .orWhere('status', '=', 'premium')
+  .all()
+
+// OR with callback
+await User.query()
+  .where('status', 'active')
+  .orWhere((query) => {
+    query.where('role', 'admin').where('isVerified', true)
+  })
+  .all()
+```
+
+## Specialized Where Methods
+
+### `whereIn(field, values)`
+
+Filter where field value is in the given array.
+
+```typescript
+whereIn(field: string, values: any[]): this
+```
+
+**Example:**
+```typescript
+await User.query()
+  .whereIn('role', ['admin', 'moderator', 'editor'])
+  .all()
+```
+
+### `whereNotIn(field, values)`
+
+Filter where field value is not in the given array.
+
+```typescript
+whereNotIn(field: string, values: any[]): this
+```
+
+### `whereBetween(field, range)`
+
+Filter where field value is between the given range.
+
+```typescript
+whereBetween(field: string, range: [any, any]): this
+```
+
+**Example:**
+```typescript
+await User.query()
+  .whereBetween('age', [18, 65])
+  .all()
+```
+
+### `whereNotBetween(field, range)`
+
+Filter where field value is not between the given range.
+
+```typescript
+whereNotBetween(field: string, range: [any, any]): this
+```
+
+### `whereExists(field)`
+
+Filter where field exists.
+
+```typescript
+whereExists(field: string): this
+```
+
+### `whereNotExists(field)`
+
+Filter where field doesn't exist.
+
+```typescript
+whereNotExists(field: string): this
+```
+
+### `whereNull(field)`
+
+Filter where field is null.
+
+```typescript
+whereNull(field: string): this
+```
+
+### `whereNotNull(field)`
+
+Filter where field is not null.
+
+```typescript
+whereNotNull(field: string): this
+```
+
+## MongoDB-Specific Methods
+
+### `whereText(search, options?)`
+
+Perform full-text search.
+
+```typescript
+whereText(search: string, options?: TextSearchOptions): this
+```
+
+**Options:**
+```typescript
+interface TextSearchOptions {
+  caseSensitive?: boolean
+  diacriticSensitive?: boolean
+  language?: string
+}
+```
+
+**Example:**
+```typescript
+await Post.query()
+  .whereText('mongodb tutorial', {
+    caseSensitive: false,
+    language: 'english'
+  })
+  .all()
+```
+
+### `whereRegex(field, pattern)`
+
+Filter using regular expressions.
+
+```typescript
+whereRegex(field: string, pattern: RegExp | string): this
+```
+
+**Example:**
+```typescript
+await User.query()
+  .whereRegex('email', /^[a-zA-Z0-9._%+-]+@gmail\.com$/)
+  .all()
+```
+
+### `whereNear(field, geometry)`
+
+Find documents near a geographical point.
+
+```typescript
+whereNear(field: string, geometry: GeoNearOptions): this
+```
+
+**Example:**
+```typescript
+await Location.query()
+  .whereNear('coordinates', {
+    geometry: { type: 'Point', coordinates: [-73.9857, 40.7484] },
+    maxDistance: 1000
+  })
+  .all()
+```
+
+### `whereGeoWithin(field, geometry)`
+
+Find documents within a geographical area.
+
+```typescript
+whereGeoWithin(field: string, geometry: GeoWithinOptions): this
+```
+
+## Array Operations
+
+### `whereArrayContains(field, value)`
+
+Filter where array field contains the value.
+
+```typescript
+whereArrayContains(field: string, value: any): this
+```
+
+**Example:**
+```typescript
+await User.query()
+  .whereArrayContains('tags', 'premium')
+  .all()
+```
+
+### `whereArrayContainsAny(field, values)`
+
+Filter where array field contains any of the values.
+
+```typescript
+whereArrayContainsAny(field: string, values: any[]): this
+```
+
+### `whereArraySize(field, size)`
+
+Filter where array field has specific size.
+
+```typescript
+whereArraySize(field: string, size: number): this
+```
+
+## Sorting and Limiting
+
+### `orderBy(field, direction?)`
+
+Add ordering to the query.
+
+```typescript
+orderBy(field: string, direction?: 'asc' | 'desc'): this
+```
+
+**Example:**
+```typescript
+await User.query()
+  .orderBy('createdAt', 'desc')
+  .orderBy('name', 'asc')
+  .all()
+```
+
+### `limit(count)`
+
+Limit the number of results.
+
+```typescript
+limit(count: number): this
+```
+
+### `skip(count)` / `offset(count)`
+
+Skip a number of results.
+
+```typescript
+skip(count: number): this
+offset(count: number): this // Alias for skip
+```
+
+**Example:**
+```typescript
+// Pagination
+await User.query()
+  .skip(20)
+  .limit(10)
+  .all()
+```
+
+## Field Selection
+
+### `select(...fields)`
+
+Select specific fields.
+
+```typescript
+select(...fields: string[]): this
+select(fields: string[]): this
+```
+
+**Example:**
+```typescript
+await User.query()
+  .select('name', 'email', 'createdAt')
+  .all()
+
+// Or with array
+await User.query()
+  .select(['name', 'email', 'createdAt'])
+  .all()
+```
+
+### `deselect(...fields)`
+
+Exclude specific fields.
+
+```typescript
+deselect(...fields: string[]): this
+```
+
+**Example:**
+```typescript
+await User.query()
+  .select('*')
+  .deselect('password', 'secretKey')
+  .all()
+```
+
+## Aggregation Methods
+
+### `count()`
+
+Count the number of documents.
+
+```typescript
+count(): Promise<number>
+```
+
+**Example:**
+```typescript
+const userCount = await User.query()
+  .where('status', 'active')
+  .count()
+```
+
+### `distinct(field)`
+
+Get distinct values for a field.
+
+```typescript
+distinct(field: string): Promise<any[]>
+```
+
+**Example:**
+```typescript
+const roles = await User.query().distinct('role')
+```
+
+### `aggregate(pipeline)`
+
+Execute an aggregation pipeline.
+
+```typescript
+aggregate(pipeline: any[]): Promise<any[]>
+```
+
+**Example:**
+```typescript
+const stats = await User.query()
+  .aggregate([
+    { $match: { status: 'active' } },
+    { $group: { _id: '$role', count: { $sum: 1 } } },
+    { $sort: { count: -1 } }
+  ])
+```
+
+## Execution Methods
+
+### `all()`
+
+Execute query and return all results.
+
+```typescript
+all(): Promise<Model[]>
+```
+
+### `first()`
+
+Execute query and return first result.
+
+```typescript
+first(): Promise<Model | null>
+```
+
+### `firstOrFail()`
+
+Execute query and return first result or throw error.
+
+```typescript
+firstOrFail(): Promise<Model>
+```
+
+**Throws:** `E_ROW_NOT_FOUND` if no results found
+
+### `find(id)`
+
+Find a document by ID.
+
+```typescript
+find(id: string): Promise<Model | null>
+```
+
+### `findOrFail(id)`
+
+Find a document by ID or throw error.
+
+```typescript
+findOrFail(id: string): Promise<Model>
+```
+
+### `findMany(ids)`
+
+Find multiple documents by IDs.
+
+```typescript
+findMany(ids: string[]): Promise<Model[]>
+```
+
+### `exists()`
+
+Check if any documents match the query.
+
+```typescript
+exists(): Promise<boolean>
+```
+
+### `paginate(page, perPage)`
+
+Paginate the results.
+
+```typescript
+paginate(page: number, perPage: number): Promise<PaginationResult<Model>>
+```
+
+**Returns:**
+```typescript
+interface PaginationResult<T> {
+  data: T[]
+  meta: {
+    total: number
+    page: number
+    perPage: number
+    lastPage: number
+    hasNext: boolean
+    hasPrev: boolean
+    from: number
+    to: number
+  }
+}
+```
+
+## Update and Delete Operations
+
+### `update(data)`
+
+Update matching documents.
+
+```typescript
+update(data: Partial<ModelAttributes<Model>>): Promise<number>
+```
+
+**Returns:** Number of affected documents
+
+**Example:**
+```typescript
+const affected = await User.query()
+  .where('status', 'pending')
+  .update({ status: 'active' })
+```
+
+### `delete()`
+
+Delete matching documents.
+
+```typescript
+delete(): Promise<number>
+```
+
+**Returns:** Number of deleted documents
+
+### `increment(field, amount?)`
+
+Increment a numeric field.
+
+```typescript
+increment(field: string, amount?: number): Promise<number>
+increment(fields: Record<string, number>): Promise<number>
+```
+
+**Example:**
+```typescript
+// Increment by 1
+await User.query()
+  .where('_id', userId)
+  .increment('loginCount')
+
+// Increment by specific amount
+await User.query()
+  .where('_id', userId)
+  .increment('credits', 100)
+
+// Increment multiple fields
+await User.query()
+  .where('_id', userId)
+  .increment({
+    loginCount: 1,
+    profileViews: 5
+  })
+```
+
+### `decrement(field, amount?)`
+
+Decrement a numeric field.
+
+```typescript
+decrement(field: string, amount?: number): Promise<number>
+decrement(fields: Record<string, number>): Promise<number>
+```
+
+## Array Update Operations
+
+### `push(field, value)`
+
+Add value(s) to an array field.
+
+```typescript
+push(field: string, value: any): Promise<number>
+push(field: string, values: any[]): Promise<number>
+```
+
+### `pull(field, value)`
+
+Remove value(s) from an array field.
+
+```typescript
+pull(field: string, value: any): Promise<number>
+pull(field: string, values: any[]): Promise<number>
+```
+
+### `addToSet(field, value)`
+
+Add unique value(s) to an array field.
+
+```typescript
+addToSet(field: string, value: any): Promise<number>
+addToSet(field: string, values: any[]): Promise<number>
+```
+
+## Query Debugging
+
+### `debug()`
+
+Enable query debugging.
+
+```typescript
+debug(): this
+```
+
+### `toQuery()`
+
+Get the query object without executing.
+
+```typescript
+toQuery(): { filter: any, options: any }
+```
+
+**Example:**
+```typescript
+const queryInfo = User.query()
+  .where('status', 'active')
+  .orderBy('createdAt', 'desc')
+  .toQuery()
+
+console.log('Filter:', queryInfo.filter)
+console.log('Options:', queryInfo.options)
+```
+
+## Raw Queries
+
+### `raw(filter)`
+
+Execute a raw MongoDB query.
+
+```typescript
+raw(filter: any): Promise<Model[]>
+```
+
+### `rawAggregate(pipeline)`
+
+Execute a raw aggregation pipeline.
+
+```typescript
+rawAggregate(pipeline: any[]): Promise<any[]>
+```
+
+## Next Steps
+
+- **[BaseModel API](/api/base-model)** - Model methods and properties
+- **[EmbeddedQueryBuilder API](/api/embedded-query-builder)** - Query embedded documents
+- **[Database Manager API](/api/database-manager)** - Database connection management
+- **[Query Builder Guide](/docs/query-builder)** - Usage examples and patterns

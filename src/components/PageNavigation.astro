@@ -1,0 +1,138 @@
+---
+import { getPageNavigation } from '../utils/navigation';
+
+// Get the current page path
+const currentPath = Astro.url.pathname;
+
+// Get navigation info for the current page
+const { previous, next } = getPageNavigation(currentPath);
+---
+
+{(previous || next) && (
+  <nav class="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700" aria-label="Page navigation">
+    <div class="flex justify-between items-center gap-6">
+      <!-- Previous page -->
+      <div class="flex-1 w-full">
+        {previous && (
+          <a
+            href={previous.href}
+            class="w-full group inline-flex items-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 focus:z-10 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700 transition-all duration-200"
+            rel="prev"
+          >
+            <svg
+              class="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+            <div class="text-left">
+              <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold">
+                Previous
+              </div>
+              <div class="font-medium">
+                {previous.title}
+              </div>
+              {previous.category && (
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {previous.category}
+                </div>
+              )}
+            </div>
+          </a>
+        )}
+      </div>
+
+      <!-- Next page -->
+      <div class="flex-1 w-full text-right">
+        {next && (
+          <a
+            href={next.href}
+            class="group w-full inline-flex items-center justify-end px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 focus:z-10 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700 transition-all duration-200"
+            rel="next"
+          >
+            <div class="text-right">
+              <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold">
+                Next
+              </div>
+              <div class="font-medium">
+                {next.title}
+              </div>
+              {next.category && (
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {next.category}
+                </div>
+              )}
+            </div>
+            <svg
+              class="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </a>
+        )}
+      </div>
+    </div>
+
+    <!-- Mobile-friendly stacked layout for smaller screens -->
+    <div class="sm:hidden mt-4 space-y-3">
+      {previous && (
+        <a
+          href={previous.href}
+          class="group flex items-center w-full px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 focus:z-10 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700 transition-all duration-200"
+          rel="prev"
+        >
+          <svg
+            class="mr-3 h-4 w-4 transition-transform group-hover:-translate-x-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+          <div class="flex-1 text-left">
+            <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold">
+              Previous
+            </div>
+            <div class="font-medium">
+              {previous.title}
+            </div>
+          </div>
+        </a>
+      )}
+
+      {next && (
+        <a
+          href={next.href}
+          class="group flex items-center w-full px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 focus:z-10 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700 transition-all duration-200"
+          rel="next"
+        >
+          <div class="flex-1 text-left">
+            <div class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide font-semibold">
+              Next
+            </div>
+            <div class="font-medium">
+              {next.title}
+            </div>
+          </div>
+          <svg
+            class="ml-3 h-4 w-4 transition-transform group-hover:translate-x-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </a>
+      )}
+    </div>
+  </nav>
+)}

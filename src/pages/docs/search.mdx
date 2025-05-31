@@ -1,0 +1,182 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Search Documentation
+description: Learn how to use the search functionality powered by Pagefind in Adonis ODM documentation
+---
+
+# Search Documentation
+
+The Adonis ODM documentation features powerful search functionality powered by [Pagefind](https://pagefind.app/). This provides fast, accurate, and offline search across all documentation content without requiring external services.
+
+## Using Search
+
+### Quick Access
+
+- **Keyboard Shortcut**: Press `Cmd + K` (Mac) or `Ctrl + K` (Windows/Linux) to open the search modal
+- **Search Button**: Click the search icon in the header navigation
+- **Auto-focus**: The search input is automatically focused when the modal opens
+
+### Search Features
+
+#### Intelligent Results
+
+- **Contextual Ranking**: Results are ranked by relevance and content quality
+- **Hierarchical Display**: Results show the page structure and content hierarchy
+- **Fast Performance**: Lightning-fast search with no network dependencies
+- **Offline Capability**: Search works completely offline once the page is loaded
+
+#### Advanced Search
+
+- **Full-Text Search**: Search through all documentation content including code examples
+- **Instant Results**: Search as you type with debounced input
+- **Keyboard Navigation**: Navigate results using arrow keys and Enter
+- **Modal Interface**: Clean, focused search experience in a modal dialog
+
+### Search Tips
+
+#### Effective Search Queries
+
+```
+# Search for specific concepts
+"query builder"
+"embedded documents"
+"relationships"
+
+# Search for code examples
+"User.query()"
+"BaseModel"
+"@column"
+
+# Search for specific methods
+"findBy"
+"paginate"
+"whereText"
+
+# Search for configuration
+"astro.config"
+"database connection"
+"environment variables"
+```
+
+#### Search Operators
+
+- **Exact phrases**: Use quotes for exact matches: `"text search"`
+- **Multiple terms**: Space-separated terms: `query builder pagination`
+- **Exclusion**: Use minus to exclude terms: `model -embedded`
+
+## Search Coverage
+
+The search index includes:
+
+### Documentation Sections
+
+- **Getting Started**: Installation, configuration, and basic setup
+- **Core Concepts**: Models, query builder, relationships, and schemas
+- **API Reference**: Complete method and property documentation
+- **Examples**: Code samples and practical implementations
+- **Guides**: Step-by-step tutorials and best practices
+
+### Content Types
+
+- **Page Titles**: All page and section headings
+- **Body Content**: Full text content of all pages
+- **Code Blocks**: Searchable code examples and snippets
+- **Method Signatures**: API method names and parameters
+- **Configuration Options**: Settings and configuration keys
+
+## Search Configuration
+
+### Pagefind Configuration
+
+The search functionality is configured using a `pagefind.yml` file:
+
+```yaml
+# Pagefind Configuration
+site: dist
+output_subdir: pagefind
+root_selector: "main, [data-pagefind-body]"
+exclude_selectors:
+  - "nav"
+  - "header"
+  - "footer"
+  - ".sidebar"
+force_language: "en"
+verbose: true
+```
+
+### Build Integration
+
+Search indexing is automatically integrated into the build process:
+
+```json
+{
+  "scripts": {
+    "build": "astro check && astro build && npx pagefind --site dist",
+    "build:search": "npx pagefind --site dist"
+  }
+}
+```
+
+## Keyboard Navigation
+
+The search modal supports full keyboard navigation:
+
+| Key            | Action                    |
+| -------------- | ------------------------- |
+| `Cmd/Ctrl + K` | Open search modal         |
+| `Escape`       | Close search modal        |
+| `↑` / `↓`      | Navigate through results  |
+| `Enter`        | Open selected result      |
+| `Tab`          | Navigate between sections |
+
+## Mobile Experience
+
+The search functionality is fully optimized for mobile devices:
+
+- **Touch-friendly**: Large touch targets for easy interaction
+- **Responsive Design**: Adapts to different screen sizes
+- **Gesture Support**: Swipe gestures for navigation
+- **Performance Optimized**: Fast loading and smooth interactions
+
+## Troubleshooting
+
+### Common Issues
+
+#### Search Not Working
+
+1. **Build Required**: Ensure you've run `npm run build` to generate the search index
+2. **Check Build Output**: Verify the `/pagefind/` directory exists in the `dist` folder
+3. **Console Errors**: Check browser console for any JavaScript errors
+
+#### No Results Found
+
+1. **Check Spelling**: Verify search terms are spelled correctly
+2. **Try Different Terms**: Use alternative words or phrases
+3. **Broaden Search**: Use fewer or more general search terms
+4. **Content Indexing**: Ensure the content is within indexed selectors
+
+#### Search Index Issues
+
+1. **Rebuild Index**: Run `npm run build:search` to regenerate the search index
+2. **Check Configuration**: Verify `pagefind.yml` settings are correct
+3. **Content Selectors**: Ensure content is not excluded by CSS selectors
+
+### Getting Help
+
+If you encounter issues with search functionality:
+
+1. **Check Documentation**: Review this search guide for solutions
+2. **GitHub Issues**: Report bugs or request features on our GitHub repository
+3. **Community Support**: Ask questions in our community forums
+4. **Contact Support**: Reach out to our support team for technical assistance
+
+## Search Analytics
+
+The search functionality includes analytics to help improve the documentation:
+
+- **Popular Queries**: Track most searched terms
+- **Click-through Rates**: Monitor result engagement
+- **No Results Queries**: Identify content gaps
+- **User Behavior**: Understand search patterns
+
+This data helps us continuously improve the documentation and search experience.

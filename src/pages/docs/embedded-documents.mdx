@@ -1,0 +1,545 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Embedded Documents
+description: Learn how to work with embedded documents and nested data structures in Adonis ODM
+---
+
+# Embedded Documents
+
+Embedded documents are one of MongoDB's most powerful features, allowing you to store related data within a single document. Adonis ODM provides first-class support for embedded documents with a familiar, type-safe API.
+
+## What are Embedded Documents?
+
+Embedded documents are documents stored inside other documents. They're perfect for:
+
+- **One-to-few relationships** (e.g., user addresses, order items)
+- **Data that's always accessed together** (e.g., user profile with preferences)
+- **Avoiding joins** for better performance
+- **Maintaining data locality** for atomic operations
+
+## Defining Embedded Documents
+
+### Basic Embedded Document
+
+```typescript
+import { BaseModel, column, embedded } from 'adonis-odm'
+import { DateTime } from 'luxon'
+
+// Define the embedded document schema
+class Address {
+  @column()
+  declare street: string
+
+  @column()
+  declare city: string
+
+  @column()
+  declare state: string
+
+  @column()
+  declare zipCode: string
+
+  @column()
+  declare country: string
+}
+
+// Use in the main model
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare name: string
+
+  @column()
+  declare email: string
+
+  // Single embedded document
+  @embedded(Address)
+  declare address: Address
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+```
+
+### Array of Embedded Documents
+
+```typescript
+class OrderItem {
+  @column()
+  declare productId: string
+
+  @column()
+  declare name: string
+
+  @column()
+  declare quantity: number
+
+  @column()
+  declare price: number
+
+  @column()
+  declare total: number
+}
+
+export default class Order extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare customerId: string
+
+  // Array of embedded documents
+  @embedded([OrderItem])
+  declare items: OrderItem[]
+
+  @column()
+  declare totalAmount: number
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+}
+```
+
+### Nested Embedded Documents
+
+```typescript
+class ContactInfo {
+  @column()
+  declare email: string
+
+  @column()
+  declare phone: string
+}
+
+class Address {
+  @column()
+  declare street: string
+
+  @column()
+  declare city: string
+
+  @column()
+  declare state: string
+
+  @column()
+  declare zipCode: string
+
+  // Nested embedded document
+  @embedded(ContactInfo)
+  declare contact: ContactInfo
+}
+
+export default class Company extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare name: string
+
+  @embedded(Address)
+  declare headquarters: Address
+
+  @embedded([Address])
+  declare branches: Address[]
+}
+```
+
+## Working with Embedded Documents
+
+### Creating Documents with Embedded Data
+
+```typescript
+// Create user with address
+const user = await User.create({
+  name: 'John Doe',
+  email: 'john@example.com',
+  address: {
+    street: '123 Main St',
+    city: 'New York',
+    state: 'NY',
+    zipCode: '10001',
+    country: 'USA'
+  }
+})
+
+// Create order with items
+const order = await Order.create({
+  customerId: 'customer123',
+  items: [
+    {
+      productId: 'prod1',
+      name: 'Laptop',
+      quantity: 1,
+      price: 999.99,
+      total: 999.99
+    },
+    {
+      productId: 'prod2',
+      name: 'Mouse',
+      quantity: 2,
+      price: 29.99,
+      total: 59.98
+    }
+  ],
+  totalAmount: 1059.97
+})
+```
+
+### Accessing Embedded Data
+
+```typescript
+// Access embedded document properties
+const user = await User.findOrFail('user123')
+console.log(user.address.street)
+console.log(user.address.city)
+
+// Access array of embedded documents
+const order = await Order.findOrFail('order123')
+for (const item of order.items) {
+  console.log(`${item.name}: ${item.quantity} x $${item.price}`)
+}
+```
+
+### Updating Embedded Documents
+
+```typescript
+// Update entire embedded document
+const user = await User.findOrFail('user123')
+user.address = {
+  street: '456 Oak Ave',
+  city: 'Los Angeles',
+  state: 'CA',
+  zipCode: '90210',
+  country: 'USA'
+}
+await user.save()
+
+// Update specific fields
+const user = await User.findOrFail('user123')
+user.address.street = '789 Pine St'
+user.address.zipCode = '10002'
+await user.save()
+
+// Update array items
+const order = await Order.findOrFail('order123')
+order.items[0].quantity = 2
+order.items[0].total = order.items[0].price * 2
+await order.save()
+```
+
+## Querying Embedded Documents
+
+### Basic Queries
+
+```typescript
+// Query by embedded document field
+const users = await User.query()
+  .where('address.city', 'New York')
+  .all()
+
+// Query by nested field
+const companies = await Company.query()
+  .where('headquarters.contact.email', 'like', '%@company.com')
+  .all()
+
+// Multiple embedded field conditions
+const users = await User.query()
+  .where('address.state', 'CA')
+  .where('address.city', 'Los Angeles')
+  .all()
+```
+
+### Array Queries
+
+```typescript
+// Query array elements
+const orders = await Order.query()
+  .where('items.productId', 'prod123')
+  .all()
+
+// Query array with conditions
+const orders = await Order.query()
+  .where('items', 'elemMatch', {
+    quantity: { $gte: 5 },
+    price: { $lte: 100 }
+  })
+  .all()
+
+// Query array size
+const orders = await Order.query()
+  .where('items', 'size', 3) // Orders with exactly 3 items
+  .all()
+```
+
+### Advanced Embedded Queries
+
+```typescript
+// Using MongoDB operators
+const users = await User.query()
+  .where('address.zipCode', 'in', ['10001', '10002', '10003'])
+  .all()
+
+// Existence checks
+const users = await User.query()
+  .whereExists('address.phone')
+  .all()
+
+// Regular expressions
+const users = await User.query()
+  .where('address.zipCode', 'regex', /^100/)
+  .all()
+```
+
+## Embedded Query Builder
+
+### Using the Embedded Query Builder
+
+```typescript
+// Query embedded documents with dedicated builder
+const orders = await Order.query()
+  .whereEmbedded('items', (query) => {
+    query
+      .where('price', '>', 100)
+      .where('quantity', '>=', 2)
+  })
+  .all()
+
+// Complex embedded queries
+const companies = await Company.query()
+  .whereEmbedded('branches', (query) => {
+    query
+      .where('city', 'San Francisco')
+      .whereEmbedded('contact', (contactQuery) => {
+        contactQuery.where('email', 'like', '%@branch.com')
+      })
+  })
+  .all()
+```
+
+### Aggregation with Embedded Documents
+
+```typescript
+// Count embedded array elements
+const stats = await Order.query()
+  .aggregate([
+    {
+      $project: {
+        customerId: 1,
+        itemCount: { $size: '$items' },
+        totalAmount: 1
+      }
+    },
+    {
+      $group: {
+        _id: '$customerId',
+        orderCount: { $sum: 1 },
+        avgItemsPerOrder: { $avg: '$itemCount' },
+        totalSpent: { $sum: '$totalAmount' }
+      }
+    }
+  ])
+
+// Unwind array for analysis
+const itemStats = await Order.query()
+  .aggregate([
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: '$items.productId',
+        totalQuantity: { $sum: '$items.quantity' },
+        totalRevenue: { $sum: '$items.total' },
+        orderCount: { $sum: 1 }
+      }
+    },
+    { $sort: { totalRevenue: -1 } }
+  ])
+```
+
+## Validation and Constraints
+
+### Embedded Document Validation
+
+```typescript
+import { rules } from '@adonisjs/validator'
+
+class Address {
+  @column({
+    validate: [
+      rules.required(),
+      rules.string(),
+      rules.maxLength(100)
+    ]
+  })
+  declare street: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.string(),
+      rules.maxLength(50)
+    ]
+  })
+  declare city: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.regex(/^\d{5}(-\d{4})?$/) // US ZIP code format
+    ]
+  })
+  declare zipCode: string
+}
+```
+
+### Array Validation
+
+```typescript
+class OrderItem {
+  @column({
+    validate: [
+      rules.required(),
+      rules.string()
+    ]
+  })
+  declare productId: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.number(),
+      rules.range(1, 1000)
+    ]
+  })
+  declare quantity: number
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.number(),
+      rules.range(0.01, 10000)
+    ]
+  })
+  declare price: number
+}
+
+export default class Order extends BaseModel {
+  @embedded([OrderItem], {
+    validate: [
+      rules.array(),
+      rules.minLength(1),
+      rules.maxLength(50)
+    ]
+  })
+  declare items: OrderItem[]
+}
+```
+
+## Performance Considerations
+
+### Best Practices
+
+```typescript
+// Index embedded fields for better query performance
+export default class User extends BaseModel {
+  static get indexes() {
+    return [
+      { 'address.city': 1 },
+      { 'address.state': 1, 'address.city': 1 },
+      { 'address.zipCode': 1 }
+    ]
+  }
+
+  @embedded(Address)
+  declare address: Address
+}
+
+// Limit embedded array size
+export default class Order extends BaseModel {
+  @embedded([OrderItem], {
+    maxLength: 100 // Prevent documents from becoming too large
+  })
+  declare items: OrderItem[]
+}
+```
+
+### Projection for Large Embedded Arrays
+
+```typescript
+// Select only needed embedded fields
+const orders = await Order.query()
+  .select('customerId', 'totalAmount', 'items.name', 'items.quantity')
+  .where('customerId', 'customer123')
+  .all()
+
+// Limit array elements in results
+const orders = await Order.query()
+  .project({
+    customerId: 1,
+    totalAmount: 1,
+    items: { $slice: 5 } // Only first 5 items
+  })
+  .all()
+```
+
+## Migration and Schema Evolution
+
+### Adding New Embedded Fields
+
+```typescript
+// Migration to add new embedded field
+export default class AddPhoneToAddress extends BaseMigration {
+  public async up() {
+    // Add phone field to existing address embedded documents
+    await this.db.collection('users').updateMany(
+      { 'address': { $exists: true } },
+      { $set: { 'address.phone': null } }
+    )
+  }
+
+  public async down() {
+    // Remove phone field
+    await this.db.collection('users').updateMany(
+      {},
+      { $unset: { 'address.phone': '' } }
+    )
+  }
+}
+```
+
+### Restructuring Embedded Documents
+
+```typescript
+// Migration to restructure embedded data
+export default class RestructureOrderItems extends BaseMigration {
+  public async up() {
+    const orders = await this.db.collection('orders').find({}).toArray()
+    
+    for (const order of orders) {
+      const updatedItems = order.items.map(item => ({
+        ...item,
+        metadata: {
+          addedAt: new Date(),
+          source: 'migration'
+        }
+      }))
+      
+      await this.db.collection('orders').updateOne(
+        { _id: order._id },
+        { $set: { items: updatedItems } }
+      )
+    }
+  }
+}
+```
+
+## Next Steps
+
+- **[Relationships](/docs/relationships)** - Define relationships between models
+- **[Database Transactions](/docs/transactions)** - Ensure data consistency
+- **[EmbeddedQueryBuilder API](/api/embedded-query-builder)** - Complete API reference
+- **[Examples: Embedded Documents](/examples/embedded-documents)** - Practical examples

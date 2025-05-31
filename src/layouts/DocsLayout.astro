@@ -1,0 +1,113 @@
+---
+import Layout from './Layout.astro';
+import Header from '../components/Header.astro';
+import Sidebar from '../components/Sidebar.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import PageNavigation from '../components/PageNavigation.astro';
+import '../styles/global.css';
+
+export interface Props {
+  title: string;
+  description?: string;
+  frontmatter?: {
+    title?: string;
+    description?: string;
+    category?: string;
+  };
+}
+
+const { title, description, frontmatter } = Astro.props;
+const pageTitle = frontmatter?.title || title;
+const pageDescription = frontmatter?.description || description;
+---
+
+<Layout title={`${pageTitle} | Adonis ODM`} description={pageDescription}>
+  <div class="min-h-screen bg-white dark:bg-gray-900">
+    <!-- Header -->
+    <Header />
+
+    <!-- Mobile menu overlay -->
+    <div
+      id="mobile-menu-overlay"
+      class="fixed inset-0 bg-gray-600 bg-opacity-75 z-40 lg:hidden hidden"
+    ></div>
+
+    <!-- Mobile sidebar -->
+    <div
+      id="mobile-menu"
+      class="fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 transform -translate-x-full transition-transform duration-300 ease-in-out lg:hidden"
+    >
+      <div class="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
+        <span class="text-lg font-semibold text-gray-900 dark:text-white">Menu</span>
+        <button
+          onclick="toggleMobileMenu()"
+          class="p-2 text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="h-full overflow-y-auto pb-16">
+        <Sidebar />
+      </div>
+    </div>
+
+    <!-- Desktop layout -->
+    <div class="lg:flex">
+      <!-- Desktop sidebar -->
+      <div class="hidden lg:flex lg:flex-shrink-0">
+        <div class="flex flex-col w-64">
+          <div class="flex flex-col h-0 flex-1 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+            <div class="flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
+              <Sidebar />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main content area -->
+      <div class="flex-1 min-w-0 flex flex-col">
+        <main class="flex-1 relative z-0 overflow-y-auto focus:outline-none">
+          <div class="py-6">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+              <div class="lg:grid lg:grid-cols-12 lg:gap-8">
+                <!-- Article content -->
+                <div class="lg:col-span-9">
+                  <article class="prose prose-lg max-w-none dark:prose-invert" data-pagefind-body>
+                    <slot />
+                  </article>
+
+                  <!-- Navigation between pages -->
+                  <PageNavigation />
+
+                  <!-- Edit on GitHub link -->
+                  <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <a
+                      href={`https://github.com/DreamsHive/adonis-odm/edit/main/docs${Astro.url?.pathname || ''}.md`}
+                      class="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"></path>
+                      </svg>
+                      Edit this page on GitHub
+                    </a>
+                  </div>
+                </div>
+
+                <!-- Table of contents -->
+                <div class="hidden lg:block lg:col-span-3">
+                  <div class="sticky top-6">
+                    <TableOfContents />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+</Layout>

@@ -1,0 +1,770 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Advanced Queries Examples
+description: Master complex MongoDB queries with Adonis ODM including aggregation, text search, and performance optimization
+---
+
+# Advanced Queries Examples
+
+This guide demonstrates advanced querying techniques in Adonis ODM, including complex aggregations, text search, geospatial queries, and performance optimization strategies.
+
+## Complex Aggregation Pipelines
+
+### User Analytics Dashboard
+
+```typescript
+// Get comprehensive user statistics
+async function getUserAnalytics() {
+  const analytics = await User.query()
+    .aggregate([
+      // Match active users only
+      { $match: { status: 'active' } },
+      
+      // Add computed fields
+      {
+        $addFields: {
+          ageGroup: {
+            $switch: {
+              branches: [
+                { case: { $lt: ['$age', 18] }, then: 'minor' },
+                { case: { $lt: ['$age', 30] }, then: 'young_adult' },
+                { case: { $lt: ['$age', 50] }, then: 'adult' },
+                { case: { $gte: ['$age', 50] }, then: 'senior' }
+              ],
+              default: 'unknown'
+            }
+          },
+          accountAge: {
+            $divide: [
+              { $subtract: [new Date(), '$createdAt'] },
+              1000 * 60 * 60 * 24 // Convert to days
+            ]
+          }
+        }
+      },
+      
+      // Group by role and age group
+      {
+        $group: {
+          _id: {
+            role: '$role',
+            ageGroup: '$ageGroup'
+          },
+          count: { $sum: 1 },
+          avgAge: { $avg: '$age' },
+          avgAccountAge: { $avg: '$accountAge' },
+          oldestUser: { $max: '$age' },
+          newestUser: { $min: '$accountAge' }
+        }
+      },
+      
+      // Sort by count descending
+      { $sort: { count: -1 } },
+      
+      // Group again to create final structure
+      {
+        $group: {
+          _id: null,
+          totalUsers: { $sum: '$count' },
+          demographics: {
+            $push: {
+              role: '$_id.role',
+              ageGroup: '$_id.ageGroup',
+              count: '$count',
+              avgAge: '$avgAge',
+              avgAccountAge: '$avgAccountAge',
+              oldestUser: '$oldestUser',
+              newestUser: '$newestUser'
+            }
+          }
+        }
+      }
+    ])
+
+  return analytics[0] || { totalUsers: 0, demographics: [] }
+}
+
+// Usage
+const analytics = await getUserAnalytics()
+console.log('Total active users:', analytics.totalUsers)
+console.log('Demographics:', analytics.demographics)
+```
+
+### Content Performance Analysis
+
+```typescript
+// Analyze post performance with author information
+async function getContentAnalytics(timeframe: { start: Date, end: Date }) {
+  const contentStats = await Post.query()
+    .aggregate([
+      // Match posts in timeframe
+      {
+        $match: {
+          createdAt: {
+            $gte: timeframe.start,
+            $lte: timeframe.end
+          },
+          isPublished: true
+        }
+      },
+      
+      // Lookup author information
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'authorId',
+          foreignField: '_id',
+          as: 'author'
+        }
+      },
+      
+      // Unwind author array
+      { $unwind: '$author' },
+      
+      // Add computed fields
+      {
+        $addFields: {
+          engagementScore: {
+            $multiply: [
+              { $add: ['$viewCount', 1] },
+              { $size: { $ifNull: ['$tags', []] } }
+            ]
+          },
+          contentLength: { $strLenCP: '$content' },
+          titleLength: { $strLenCP: '$title' }
+        }
+      },
+      
+      // Group by author
+      {
+        $group: {
+          _id: '$authorId',
+          authorName: { $first: '$author.name' },
+          authorEmail: { $first: '$author.email' },
+          postCount: { $sum: 1 },
+          totalViews: { $sum: '$viewCount' },
+          avgViews: { $avg: '$viewCount' },
+          totalEngagement: { $sum: '$engagementScore' },
+          avgContentLength: { $avg: '$contentLength' },
+          avgTitleLength: { $avg: '$titleLength' },
+          topPost: {
+            $max: {
+              title: '$title',
+              views: '$viewCount',
+              engagement: '$engagementScore'
+            }
+          },
+          tags: { $push: '$tags' }
+        }
+      },
+      
+      // Flatten and count unique tags
+      {
+        $addFields: {
+          uniqueTags: {
+            $size: {
+              $setUnion: {
+                $reduce: {
+                  input: '$tags',
+                  initialValue: [],
+                  in: { $setUnion: ['$$value', '$$this'] }
+                }
+              }
+            }
+          }
+        }
+      },
+      
+      // Sort by total engagement
+      { $sort: { totalEngagement: -1 } },
+      
+      // Limit to top 20 authors
+      { $limit: 20 }
+    ])
+
+  return contentStats
+}
+
+// Usage
+const contentAnalytics = await getContentAnalytics({
+  start: new Date('2024-01-01'),
+  end: new Date('2024-12-31')
+})
+
+contentAnalytics.forEach(author => {
+  console.log(`${author.authorName}: ${author.postCount} posts, ${author.totalViews} views`)
+})
+```
+
+## Advanced Text Search
+
+### Multi-Field Search with Scoring
+
+```typescript
+// Advanced search with custom scoring
+async function advancedSearch(searchQuery: string, options: {
+  includeUnpublished?: boolean
+  authorFilter?: string
+  tagFilter?: string[]
+  minViews?: number
+  sortBy?: 'relevance' | 'date' | 'popularity'
+  page?: number
+  perPage?: number
+}) {
+  const pipeline = []
+
+  // Text search stage
+  if (searchQuery) {
+    pipeline.push({
+      $match: {
+        $text: {
+          $search: searchQuery,
+          $caseSensitive: false,
+          $diacriticSensitive: false
+        }
+      }
+    })
+  }
+
+  // Add text score
+  pipeline.push({
+    $addFields: {
+      textScore: { $meta: 'textScore' },
+      // Custom relevance scoring
+      relevanceScore: {
+        $add: [
+          { $meta: 'textScore' },
+          { $multiply: [{ $ln: { $add: ['$viewCount', 1] } }, 0.1] },
+          { $cond: [{ $eq: ['$isPublished', true] }, 0.5, 0] }
+        ]
+      }
+    }
+  })
+
+  // Apply filters
+  const matchConditions: any = {}
+
+  if (!options.includeUnpublished) {
+    matchConditions.isPublished = true
+  }
+
+  if (options.minViews) {
+    matchConditions.viewCount = { $gte: options.minViews }
+  }
+
+  if (options.tagFilter && options.tagFilter.length > 0) {
+    matchConditions.tags = { $in: options.tagFilter }
+  }
+
+  if (Object.keys(matchConditions).length > 0) {
+    pipeline.push({ $match: matchConditions })
+  }
+
+  // Lookup author if needed
+  if (options.authorFilter) {
+    pipeline.push(
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'authorId',
+          foreignField: '_id',
+          as: 'author'
+        }
+      },
+      { $unwind: '$author' },
+      {
+        $match: {
+          'author.name': { $regex: options.authorFilter, $options: 'i' }
+        }
+      }
+    )
+  }
+
+  // Sorting
+  let sortStage: any
+  switch (options.sortBy) {
+    case 'relevance':
+      sortStage = { relevanceScore: -1, createdAt: -1 }
+      break
+    case 'date':
+      sortStage = { createdAt: -1 }
+      break
+    case 'popularity':
+      sortStage = { viewCount: -1, createdAt: -1 }
+      break
+    default:
+      sortStage = { relevanceScore: -1, createdAt: -1 }
+  }
+
+  pipeline.push({ $sort: sortStage })
+
+  // Pagination
+  const page = options.page || 1
+  const perPage = options.perPage || 20
+  const skip = (page - 1) * perPage
+
+  // Add pagination and count
+  pipeline.push({
+    $facet: {
+      data: [
+        { $skip: skip },
+        { $limit: perPage },
+        {
+          $project: {
+            title: 1,
+            content: { $substr: ['$content', 0, 200] }, // Excerpt
+            slug: 1,
+            authorId: 1,
+            tags: 1,
+            viewCount: 1,
+            createdAt: 1,
+            textScore: 1,
+            relevanceScore: 1,
+            author: { $ifNull: ['$author', null] }
+          }
+        }
+      ],
+      totalCount: [{ $count: 'count' }]
+    }
+  })
+
+  const results = await Post.query().aggregate(pipeline)
+  const result = results[0]
+
+  return {
+    data: result.data,
+    meta: {
+      total: result.totalCount[0]?.count || 0,
+      page,
+      perPage,
+      lastPage: Math.ceil((result.totalCount[0]?.count || 0) / perPage)
+    }
+  }
+}
+
+// Usage
+const searchResults = await advancedSearch('mongodb tutorial', {
+  includeUnpublished: false,
+  tagFilter: ['database', 'tutorial'],
+  minViews: 100,
+  sortBy: 'relevance',
+  page: 1,
+  perPage: 10
+})
+```
+
+## Geospatial Queries
+
+### Location-Based Search
+
+```typescript
+// Location model for geospatial examples
+class Location extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare name: string
+
+  @column()
+  declare type: 'restaurant' | 'hotel' | 'attraction' | 'store'
+
+  @column()
+  declare coordinates: {
+    type: 'Point'
+    coordinates: [number, number] // [longitude, latitude]
+  }
+
+  @column()
+  declare address: string
+
+  @column()
+  declare rating: number
+
+  @column()
+  declare priceRange: '$' | '$$' | '$$$' | '$$$$'
+
+  static get indexes() {
+    return [
+      { coordinates: '2dsphere' }, // Geospatial index
+      { type: 1, rating: -1 }
+    ]
+  }
+}
+
+// Find nearby locations
+async function findNearbyLocations(
+  userLocation: { lat: number, lng: number },
+  options: {
+    maxDistance?: number // in meters
+    type?: string
+    minRating?: number
+    priceRange?: string[]
+    limit?: number
+  } = {}
+) {
+  const pipeline = [
+    // Geospatial search
+    {
+      $geoNear: {
+        near: {
+          type: 'Point',
+          coordinates: [userLocation.lng, userLocation.lat]
+        },
+        distanceField: 'distance',
+        maxDistance: options.maxDistance || 5000, // 5km default
+        spherical: true,
+        distanceMultiplier: 1 // Distance in meters
+      }
+    }
+  ]
+
+  // Apply filters
+  const matchConditions: any = {}
+
+  if (options.type) {
+    matchConditions.type = options.type
+  }
+
+  if (options.minRating) {
+    matchConditions.rating = { $gte: options.minRating }
+  }
+
+  if (options.priceRange && options.priceRange.length > 0) {
+    matchConditions.priceRange = { $in: options.priceRange }
+  }
+
+  if (Object.keys(matchConditions).length > 0) {
+    pipeline.push({ $match: matchConditions })
+  }
+
+  // Sort by distance and rating
+  pipeline.push({
+    $sort: {
+      distance: 1,
+      rating: -1
+    }
+  })
+
+  // Limit results
+  if (options.limit) {
+    pipeline.push({ $limit: options.limit })
+  }
+
+  // Format distance for display
+  pipeline.push({
+    $addFields: {
+      distanceKm: { $round: [{ $divide: ['$distance', 1000] }, 2] },
+      distanceMiles: { $round: [{ $divide: ['$distance', 1609.34] }, 2] }
+    }
+  })
+
+  return await Location.query().aggregate(pipeline)
+}
+
+// Find locations within a polygon (e.g., city boundaries)
+async function findLocationsInArea(polygon: number[][]) {
+  return await Location.query()
+    .where('coordinates', 'geoWithin', {
+      $geometry: {
+        type: 'Polygon',
+        coordinates: [polygon]
+      }
+    })
+    .orderBy('rating', 'desc')
+    .all()
+}
+
+// Usage
+const nearbyRestaurants = await findNearbyLocations(
+  { lat: 40.7589, lng: -73.9851 }, // Times Square, NYC
+  {
+    maxDistance: 2000, // 2km
+    type: 'restaurant',
+    minRating: 4.0,
+    priceRange: ['$$', '$$$'],
+    limit: 20
+  }
+)
+
+console.log('Found restaurants:', nearbyRestaurants.length)
+nearbyRestaurants.forEach(restaurant => {
+  console.log(`${restaurant.name} - ${restaurant.distanceKm}km away, ${restaurant.rating}⭐`)
+})
+```
+
+## Performance Optimization
+
+### Efficient Pagination with Cursor
+
+```typescript
+// Cursor-based pagination for large datasets
+async function getCursorPaginatedPosts(
+  cursor?: string,
+  limit: number = 20,
+  filters: {
+    authorId?: string
+    tags?: string[]
+    published?: boolean
+  } = {}
+) {
+  const query = Post.query()
+
+  // Apply filters
+  if (filters.published !== undefined) {
+    query.where('isPublished', filters.published)
+  }
+
+  if (filters.authorId) {
+    query.where('authorId', filters.authorId)
+  }
+
+  if (filters.tags && filters.tags.length > 0) {
+    query.whereArrayContainsAny('tags', filters.tags)
+  }
+
+  // Cursor pagination
+  if (cursor) {
+    query.where('_id', '<', cursor)
+  }
+
+  // Order and limit
+  query
+    .orderBy('_id', 'desc')
+    .limit(limit + 1) // Get one extra to check if there's a next page
+
+  const posts = await query.all()
+  const hasNext = posts.length > limit
+
+  if (hasNext) {
+    posts.pop() // Remove the extra item
+  }
+
+  return {
+    data: posts,
+    hasNext,
+    nextCursor: hasNext ? posts[posts.length - 1]._id : null
+  }
+}
+
+// Optimized search with indexes
+async function optimizedPostSearch(searchTerm: string, options: {
+  useIndex?: boolean
+  fields?: string[]
+  limit?: number
+}) {
+  if (options.useIndex) {
+    // Use text index for better performance
+    return await Post.query()
+      .whereText(searchTerm)
+      .select(options.fields || ['title', 'slug', 'createdAt'])
+      .orderBy('score', { $meta: 'textScore' })
+      .limit(options.limit || 50)
+      .all()
+  } else {
+    // Fallback to regex search
+    return await Post.query()
+      .where((query) => {
+        query
+          .where('title', 'regex', new RegExp(searchTerm, 'i'))
+          .orWhere('content', 'regex', new RegExp(searchTerm, 'i'))
+      })
+      .select(options.fields || ['title', 'slug', 'createdAt'])
+      .limit(options.limit || 50)
+      .all()
+  }
+}
+```
+
+### Batch Operations
+
+```typescript
+// Efficient batch processing
+async function batchUpdatePostViews(viewUpdates: { postId: string, views: number }[]) {
+  // Group updates by post ID to avoid duplicates
+  const updateMap = new Map<string, number>()
+  
+  viewUpdates.forEach(update => {
+    const current = updateMap.get(update.postId) || 0
+    updateMap.set(update.postId, current + update.views)
+  })
+
+  // Perform batch updates
+  const bulkOps = Array.from(updateMap.entries()).map(([postId, viewIncrement]) => ({
+    updateOne: {
+      filter: { _id: postId },
+      update: { $inc: { viewCount: viewIncrement } }
+    }
+  }))
+
+  if (bulkOps.length > 0) {
+    const collection = Post.query().collection()
+    const result = await collection.bulkWrite(bulkOps)
+    
+    console.log(`Updated ${result.modifiedCount} posts`)
+    return result
+  }
+}
+
+// Batch create with validation
+async function batchCreateUsers(usersData: any[], batchSize: number = 100) {
+  const results = []
+  
+  // Process in batches to avoid memory issues
+  for (let i = 0; i < usersData.length; i += batchSize) {
+    const batch = usersData.slice(i, i + batchSize)
+    
+    try {
+      const batchResults = await User.createMany(batch)
+      results.push(...batchResults)
+      
+      console.log(`Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(usersData.length / batchSize)}`)
+    } catch (error) {
+      console.error(`Batch ${Math.floor(i / batchSize) + 1} failed:`, error.message)
+      
+      // Process individually to identify problematic records
+      for (const userData of batch) {
+        try {
+          const user = await User.create(userData)
+          results.push(user)
+        } catch (individualError) {
+          console.error(`Failed to create user ${userData.email}:`, individualError.message)
+        }
+      }
+    }
+  }
+  
+  return results
+}
+```
+
+## Real-Time Analytics
+
+### Live Dashboard Queries
+
+```typescript
+// Real-time metrics for dashboard
+async function getDashboardMetrics() {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const thisWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+  const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  const [
+    totalUsers,
+    activeUsers,
+    newUsersToday,
+    newUsersThisWeek,
+    totalPosts,
+    publishedPosts,
+    postsToday,
+    topAuthors,
+    popularTags
+  ] = await Promise.all([
+    // Total users
+    User.query().count(),
+    
+    // Active users (logged in within 30 days)
+    User.query()
+      .where('lastLoginAt', '>=', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
+      .count(),
+    
+    // New users today
+    User.query()
+      .where('createdAt', '>=', today)
+      .count(),
+    
+    // New users this week
+    User.query()
+      .where('createdAt', '>=', thisWeek)
+      .count(),
+    
+    // Total posts
+    Post.query().count(),
+    
+    // Published posts
+    Post.query()
+      .where('isPublished', true)
+      .count(),
+    
+    // Posts created today
+    Post.query()
+      .where('createdAt', '>=', today)
+      .count(),
+    
+    // Top authors by post count
+    Post.query()
+      .aggregate([
+        { $match: { isPublished: true } },
+        {
+          $group: {
+            _id: '$authorId',
+            postCount: { $sum: 1 },
+            totalViews: { $sum: '$viewCount' }
+          }
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'author'
+          }
+        },
+        { $unwind: '$author' },
+        {
+          $project: {
+            authorName: '$author.name',
+            postCount: 1,
+            totalViews: 1
+          }
+        },
+        { $sort: { postCount: -1 } },
+        { $limit: 5 }
+      ]),
+    
+    // Popular tags
+    Post.query()
+      .aggregate([
+        { $match: { isPublished: true } },
+        { $unwind: '$tags' },
+        {
+          $group: {
+            _id: '$tags',
+            count: { $sum: 1 },
+            totalViews: { $sum: '$viewCount' }
+          }
+        },
+        { $sort: { count: -1 } },
+        { $limit: 10 }
+      ])
+  ])
+
+  return {
+    users: {
+      total: totalUsers,
+      active: activeUsers,
+      newToday: newUsersToday,
+      newThisWeek: newUsersThisWeek
+    },
+    posts: {
+      total: totalPosts,
+      published: publishedPosts,
+      createdToday: postsToday
+    },
+    topAuthors,
+    popularTags
+  }
+}
+
+// Usage
+const metrics = await getDashboardMetrics()
+console.log('Dashboard metrics:', metrics)
+```
+
+## Next Steps
+
+- **[Embedded Documents](/examples/embedded-documents)** - Working with nested data structures
+- **[Transactions](/examples/transactions)** - Managing data consistency
+- **[Query Builder API](/api/query-builder)** - Complete query building reference
+- **[Performance Optimization](/docs/connections)** - Database performance tips

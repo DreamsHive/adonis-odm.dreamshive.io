@@ -1,0 +1,553 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Database Transactions
+description: Learn how to use MongoDB transactions in Adonis ODM to ensure data consistency and integrity
+---
+
+# Database Transactions
+
+Database transactions in Adonis ODM provide ACID (Atomicity, Consistency, Isolation, Durability) properties for MongoDB operations. Transactions ensure that multiple operations either all succeed or all fail, maintaining data integrity across your application.
+
+## Understanding MongoDB Transactions
+
+MongoDB transactions work with:
+
+- **Replica Sets** (MongoDB 4.0+)
+- **Sharded Clusters** (MongoDB 4.2+)
+- **Single Documents** (always atomic)
+
+Transactions are essential for operations that span multiple documents or collections.
+
+## Basic Transaction Usage
+
+### Simple Transaction
+
+```typescript
+import db from "adonis-odm/services/db";
+import User from "#models/user";
+import UserProfile from "#models/user_profile";
+
+// Basic transaction
+const trx = await db.transaction();
+
+try {
+  // Create user
+  const user = await User.create(
+    {
+      name: "John Doe",
+      email: "john@example.com",
+    },
+    { client: trx }
+  );
+
+  // Create profile
+  const profile = await UserProfile.create(
+    {
+      userId: user._id,
+      bio: "Software developer",
+      avatar: "default.jpg",
+    },
+    { client: trx }
+  );
+
+  // Commit transaction
+  await trx.commit();
+
+  console.log("User and profile created successfully");
+} catch (error) {
+  // Rollback on error
+  await trx.rollback();
+  throw error;
+}
+```
+
+### Using Transaction Callback
+
+```typescript
+// Transaction with callback (auto-commit/rollback)
+const result = await db.transaction(async (trx) => {
+  const user = await User.create(
+    {
+      name: "Jane Smith",
+      email: "jane@example.com",
+    },
+    { client: trx }
+  );
+
+  const profile = await UserProfile.create(
+    {
+      userId: user._id,
+      bio: "Product manager",
+    },
+    { client: trx }
+  );
+
+  return { user, profile };
+});
+
+// Transaction automatically committed if no errors
+console.log("Created user:", result.user._id);
+```
+
+## Advanced Transaction Patterns
+
+### Nested Transactions
+
+```typescript
+// Outer transaction
+await db.transaction(async (outerTrx) => {
+  const user = await User.create(
+    {
+      name: "Alice Johnson",
+      email: "alice@example.com",
+    },
+    { client: outerTrx }
+  );
+
+  // Inner transaction (savepoint)
+  await db.transaction(
+    async (innerTrx) => {
+      const profile = await UserProfile.create(
+        {
+          userId: user._id,
+          bio: "Designer",
+        },
+        { client: innerTrx }
+      );
+
+      const preferences = await UserPreferences.create(
+        {
+          userId: user._id,
+          theme: "dark",
+          notifications: true,
+        },
+        { client: innerTrx }
+      );
+
+      return { profile, preferences };
+    },
+    { client: outerTrx }
+  );
+
+  return user;
+});
+```
+
+### Conditional Transactions
+
+```typescript
+async function transferCredits(
+  fromUserId: string,
+  toUserId: string,
+  amount: number
+) {
+  return await Database.transaction(async (trx) => {
+    // Get users with lock
+    const fromUser = await User.query({ client: trx })
+      .where("_id", fromUserId)
+      .forUpdate()
+      .firstOrFail();
+
+    const toUser = await User.query({ client: trx })
+      .where("_id", toUserId)
+      .forUpdate()
+      .firstOrFail();
+
+    // Check sufficient balance
+    if (fromUser.credits < amount) {
+      throw new Error("Insufficient credits");
+    }
+
+    // Update balances
+    fromUser.credits -= amount;
+    toUser.credits += amount;
+
+    await fromUser.save({ client: trx });
+    await toUser.save({ client: trx });
+
+    // Log transaction
+    await TransactionLog.create(
+      {
+        fromUserId,
+        toUserId,
+        amount,
+        type: "credit_transfer",
+      },
+      { client: trx }
+    );
+
+    return { fromUser, toUser };
+  });
+}
+```
+
+## Transaction Options
+
+### Read Concerns
+
+```typescript
+// Read concern options
+const trx = await Database.transaction({
+  readConcern: {
+    level: "majority", // 'local', 'available', 'majority', 'linearizable', 'snapshot'
+  },
+});
+
+try {
+  const users = await User.query({ client: trx })
+    .where("status", "active")
+    .all();
+
+  await trx.commit();
+} catch (error) {
+  await trx.rollback();
+  throw error;
+}
+```
+
+### Write Concerns
+
+```typescript
+// Write concern options
+const trx = await Database.transaction({
+  writeConcern: {
+    w: "majority",
+    j: true,
+    wtimeout: 5000,
+  },
+});
+
+try {
+  await User.create(
+    {
+      name: "Important User",
+      email: "important@example.com",
+    },
+    { client: trx }
+  );
+
+  await trx.commit();
+} catch (error) {
+  await trx.rollback();
+  throw error;
+}
+```
+
+### Session Options
+
+```typescript
+// Custom session options
+const trx = await Database.transaction({
+  maxCommitTimeMS: 30000,
+  defaultTransactionOptions: {
+    readConcern: { level: "snapshot" },
+    writeConcern: { w: "majority" },
+  },
+});
+```
+
+## Error Handling
+
+### Transaction Error Types
+
+```typescript
+try {
+  await Database.transaction(async (trx) => {
+    // Operations that might fail
+    await User.create(
+      {
+        email: "duplicate@example.com", // Might violate unique constraint
+      },
+      { client: trx }
+    );
+  });
+} catch (error) {
+  if (error.code === 11000) {
+    // Duplicate key error
+    console.log("Email already exists");
+  } else if (error.errorLabels?.includes("TransientTransactionError")) {
+    // Retry transaction
+    console.log("Transaction failed, retrying...");
+  } else if (error.errorLabels?.includes("UnknownTransactionCommitResult")) {
+    // Commit result unknown
+    console.log("Transaction commit result unknown");
+  } else {
+    // Other errors
+    throw error;
+  }
+}
+```
+
+### Retry Logic
+
+```typescript
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3
+): Promise<T> {
+  let lastError: Error;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      // Check if error is retryable
+      if (
+        error.errorLabels?.includes("TransientTransactionError") ||
+        error.errorLabels?.includes("UnknownTransactionCommitResult")
+      ) {
+        if (attempt < maxRetries) {
+          // Wait before retry
+          await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+          continue;
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError!;
+}
+
+// Usage
+const result = await withRetry(async () => {
+  return await Database.transaction(async (trx) => {
+    // Your transaction operations
+    return await performComplexOperation(trx);
+  });
+});
+```
+
+## Performance Considerations
+
+### Transaction Scope
+
+```typescript
+// Good: Keep transactions short
+await Database.transaction(async (trx) => {
+  const user = await User.create(userData, { client: trx });
+  const profile = await UserProfile.create(profileData, { client: trx });
+  return { user, profile };
+});
+
+// Avoid: Long-running transactions
+await Database.transaction(async (trx) => {
+  // Don't do this - external API calls in transactions
+  const externalData = await fetch("https://api.example.com/data");
+
+  // Don't do this - heavy computations
+  const processedData = await heavyDataProcessing(data);
+
+  const user = await User.create(userData, { client: trx });
+});
+```
+
+### Batch Operations
+
+```typescript
+// Efficient batch operations in transactions
+await Database.transaction(async (trx) => {
+  // Create multiple users efficiently
+  const users = await User.createMany(
+    [
+      { name: "User 1", email: "user1@example.com" },
+      { name: "User 2", email: "user2@example.com" },
+      { name: "User 3", email: "user3@example.com" },
+    ],
+    { client: trx }
+  );
+
+  // Bulk update
+  await User.query({ client: trx })
+    .whereIn(
+      "_id",
+      users.map((u) => u._id)
+    )
+    .update({ status: "active" });
+
+  return users;
+});
+```
+
+## Transaction Isolation
+
+### Read Phenomena
+
+```typescript
+// Prevent dirty reads
+await Database.transaction(
+  async (trx) => {
+    // Read with transaction isolation
+    const user = await User.query({ client: trx })
+      .where("_id", userId)
+      .firstOrFail();
+
+    // Modifications are isolated
+    user.balance += 100;
+    await user.save({ client: trx });
+  },
+  {
+    readConcern: { level: "snapshot" },
+  }
+);
+```
+
+### Optimistic Concurrency Control
+
+```typescript
+// Using version fields for optimistic locking
+export default class Account extends BaseModel {
+  @column()
+  declare balance: number;
+
+  @column()
+  declare version: number;
+
+  async updateBalance(amount: number, trx?: TransactionClient) {
+    const currentVersion = this.version;
+
+    this.balance += amount;
+    this.version += 1;
+
+    // Update with version check
+    const updated = await Account.query({ client: trx })
+      .where("_id", this._id)
+      .where("version", currentVersion)
+      .update({
+        balance: this.balance,
+        version: this.version,
+      });
+
+    if (updated === 0) {
+      throw new Error("Concurrent modification detected");
+    }
+  }
+}
+```
+
+## Testing Transactions
+
+### Transaction Testing
+
+```typescript
+import { test } from "@japa/runner";
+import Database from "@ioc:Adonis/Lucid/Database";
+
+test.group("User transactions", (group) => {
+  group.each.setup(async () => {
+    // Setup test data
+  });
+
+  group.each.teardown(async () => {
+    // Cleanup
+  });
+
+  test("should create user and profile atomically", async ({ assert }) => {
+    const result = await Database.transaction(async (trx) => {
+      const user = await User.create(
+        {
+          name: "Test User",
+          email: "test@example.com",
+        },
+        { client: trx }
+      );
+
+      const profile = await UserProfile.create(
+        {
+          userId: user._id,
+          bio: "Test bio",
+        },
+        { client: trx }
+      );
+
+      return { user, profile };
+    });
+
+    assert.exists(result.user._id);
+    assert.exists(result.profile._id);
+    assert.equal(result.profile.userId, result.user._id);
+  });
+
+  test("should rollback on error", async ({ assert }) => {
+    await assert.rejects(async () => {
+      await Database.transaction(async (trx) => {
+        await User.create(
+          {
+            name: "Test User",
+            email: "test@example.com",
+          },
+          { client: trx }
+        );
+
+        // This will cause rollback
+        throw new Error("Simulated error");
+      });
+    });
+
+    // Verify no user was created
+    const userCount = await User.query().count();
+    assert.equal(userCount, 0);
+  });
+});
+```
+
+## Best Practices
+
+### Transaction Guidelines
+
+```typescript
+// 1. Keep transactions short and focused
+async function createUserWithProfile(userData: any, profileData: any) {
+  return await Database.transaction(async (trx) => {
+    const user = await User.create(userData, { client: trx });
+    const profile = await UserProfile.create(
+      {
+        ...profileData,
+        userId: user._id,
+      },
+      { client: trx }
+    );
+
+    return { user, profile };
+  });
+}
+
+// 2. Handle errors appropriately
+async function safeTransfer(fromId: string, toId: string, amount: number) {
+  try {
+    return await Database.transaction(async (trx) => {
+      // Transfer logic
+    });
+  } catch (error) {
+    // Log error
+    console.error("Transfer failed:", error);
+
+    // Re-throw for caller to handle
+    throw new Error("Transfer could not be completed");
+  }
+}
+
+// 3. Use appropriate isolation levels
+async function generateReport() {
+  return await Database.transaction(
+    async (trx) => {
+      // Use snapshot isolation for consistent reads
+      const data = await aggregateData(trx);
+      return generateReportFromData(data);
+    },
+    {
+      readConcern: { level: "snapshot" },
+    }
+  );
+}
+```
+
+## Next Steps
+
+- **[Connection Management](/docs/connections)** - Manage database connections
+- **[Model Lifecycle](/docs/lifecycle)** - Understand transaction hooks
+- **[Transaction Client API](/api/transaction-client)** - Complete API reference
+- **[Examples: Transactions](/examples/transactions)** - Practical transaction examples

@@ -1,0 +1,264 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Commands
+description: Learn about the available ace commands for working with Adonis ODM
+---
+
+# Commands
+
+Adonis ODM provides several ace commands to help you work with MongoDB models and database operations efficiently.
+
+## Available Commands
+
+### Configuration
+
+```bash
+# Configure the package (run this after installation)
+node ace configure adonis-odm
+```
+
+### Model Generation
+
+#### `make:odm-model`
+
+Generate a new ODM model with the proper structure and decorators:
+
+```bash
+node ace make:odm-model User
+```
+
+**Generated file structure:**
+```typescript
+import { BaseModel, column } from 'adonis-odm'
+import { DateTime } from 'luxon'
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+```
+
+**Options:**
+- `--exact` - Generate model with exact name (no pluralization)
+- `--connection=<name>` - Specify which connection to use
+
+**Examples:**
+```bash
+# Generate a User model
+node ace make:odm-model User
+
+# Generate with exact name (no pluralization)
+node ace make:odm-model UserProfile --exact
+
+# Generate for specific connection
+node ace make:odm-model AnalyticsEvent --connection=analytics
+```
+
+### Database Operations
+
+```bash
+# Test database connection (coming soon)
+node ace mongodb:status
+
+# Show database information (coming soon)
+node ace mongodb:info
+```
+
+The following commands are planned for future releases:
+
+#### `mongodb:status` (Coming Soon)
+
+Check the status of your MongoDB connections.
+
+#### `mongodb:info` (Coming Soon)
+
+Display detailed information about your MongoDB setup including server version, database statistics, and collection information.
+
+## Command Examples
+
+### Setting Up a New Project
+
+```bash
+# 1. Install Adonis ODM
+npm i adonis-odm
+
+# 2. Configure the package
+node ace configure adonis-odm
+
+# 3. Create your first model
+node ace make:odm-model User
+```
+
+### Creating Models for Different Purposes
+
+```bash
+# User management models
+node ace make:odm-model User
+node ace make:odm-model UserProfile --exact
+node ace make:odm-model UserPreferences --exact
+
+# Blog models
+node ace make:odm-model Post
+node ace make:odm-model Comment
+node ace make:odm-model Category
+
+# Analytics models (different connection)
+node ace make:odm-model AnalyticsEvent --connection=analytics
+node ace make:odm-model PageView --connection=analytics
+```
+
+## Custom Commands
+
+You can create custom commands that work with Adonis ODM:
+
+### Creating a Custom Command
+
+```bash
+node ace make:command SyncUsers
+```
+
+### Example Custom Command
+
+```typescript
+import { BaseCommand } from '@adonisjs/core/ace'
+import { CommandOptions } from '@adonisjs/core/types/ace'
+import User from '#models/user'
+
+export default class SyncUsers extends BaseCommand {
+  static commandName = 'sync:users'
+  static description = 'Sync users from external API'
+
+  static options: CommandOptions = {
+    startApp: true,
+  }
+
+  async run() {
+    this.logger.info('Starting user sync...')
+
+    try {
+      // Your sync logic here
+      const users = await this.fetchUsersFromAPI()
+      
+      for (const userData of users) {
+        await User.updateOrCreate(
+          { email: userData.email },
+          userData
+        )
+      }
+
+      this.logger.success(`Synced ${users.length} users`)
+    } catch (error) {
+      this.logger.error('Sync failed:', error.message)
+      this.exitCode = 1
+    }
+  }
+
+  private async fetchUsersFromAPI() {
+    // API call logic
+    return []
+  }
+}
+```
+
+### Using Database Service in Commands
+
+```typescript
+import { BaseCommand } from '@adonisjs/core/ace'
+import db from 'adonis-odm/services/db'
+
+export default class DatabaseMaintenance extends BaseCommand {
+  static commandName = 'db:maintenance'
+  static description = 'Perform database maintenance tasks'
+
+  async run() {
+    // Use transactions in commands
+    await db.transaction(async (trx) => {
+      // Cleanup old records
+      await User.query({ client: trx })
+        .where('lastLoginAt', '<', DateTime.now().minus({ days: 365 }))
+        .delete()
+
+      // Update statistics
+      await this.updateStatistics(trx)
+    })
+
+    this.logger.success('Maintenance completed')
+  }
+
+  private async updateStatistics(trx: any) {
+    // Statistics update logic
+  }
+}
+```
+
+## Best Practices
+
+### 1. Use Transactions for Data Integrity
+
+```typescript
+await db.transaction(async (trx) => {
+  // All operations within transaction
+  await Model1.create(data1, { client: trx })
+  await Model2.create(data2, { client: trx })
+})
+```
+
+### 2. Handle Errors Gracefully
+
+```typescript
+try {
+  await this.performOperation()
+  this.logger.success('Operation completed')
+} catch (error) {
+  this.logger.error('Operation failed:', error.message)
+  this.exitCode = 1
+}
+```
+
+### 3. Provide Progress Feedback
+
+```typescript
+const total = await User.query().count()
+let processed = 0
+
+for (const user of users) {
+  await this.processUser(user)
+  processed++
+  
+  if (processed % 100 === 0) {
+    this.logger.info(`Progress: ${processed}/${total}`)
+  }
+}
+```
+
+## Troubleshooting
+
+### Command Not Found
+
+If commands are not available:
+
+1. Ensure the provider is registered in `adonisrc.ts`
+2. Restart your development server
+3. Check that the package is properly installed
+
+### Connection Issues
+
+If database commands fail:
+
+1. Check your environment variables
+2. Verify MongoDB is running
+3. Test connection manually
+
+## Next Steps
+
+Now that you know about the available commands:
+
+1. **[Learn about Models](/docs/models)** - Create your data models
+2. **[Explore Query Builder](/docs/query-builder)** - Build complex queries
+3. **[Work with Transactions](/docs/transactions)** - Ensure data consistency

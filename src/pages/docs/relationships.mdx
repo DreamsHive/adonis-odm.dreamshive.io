@@ -1,0 +1,457 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Relationships
+description: Learn how to define and work with relationships between models in Adonis ODM
+---
+
+# Relationships
+
+Relationships in Adonis ODM allow you to define connections between different models, making it easy to work with related data across collections. While MongoDB is document-oriented, relationships help maintain data integrity and provide convenient query methods.
+
+## Types of Relationships
+
+Adonis ODM currently supports the following relationship types:
+
+- **Has One** - One-to-one relationship
+- **Has Many** - One-to-many relationship
+- **Belongs To** - Inverse of has one/has many
+
+> **Note**: Many-to-many and has-many-through relationships are planned for future releases. For now, you can use embedded documents or manual reference management for complex relationships.
+
+## Has One Relationship
+
+A has one relationship defines a one-to-one connection between two models.
+
+### Defining Has One
+
+```typescript
+import { BaseModel, column, hasOne } from "adonis-odm";
+import type { HasOne } from "adonis-odm/types";
+import UserProfile from "./user_profile.js";
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare name: string;
+
+  @column()
+  declare email: string;
+
+  // Has one relationship
+  @hasOne(() => UserProfile)
+  declare profile: HasOne<typeof UserProfile>;
+}
+```
+
+```typescript
+// UserProfile model
+import { BaseModel, column, belongsTo } from "adonis-odm";
+import type { BelongsTo } from "adonis-odm/types";
+import User from "./user.js";
+
+export default class UserProfile extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare userId: string;
+
+  @column()
+  declare bio: string;
+
+  @column()
+  declare avatar: string;
+
+  // Belongs to relationship
+  @belongsTo(() => User)
+  declare user: BelongsTo<typeof User>;
+}
+```
+
+### Using Has One
+
+```typescript
+// Create user with profile
+const user = await User.create({
+  name: "John Doe",
+  email: "john@example.com",
+});
+
+const profile = await user.related("profile").create({
+  bio: "Software developer",
+  avatar: "avatar.jpg",
+});
+
+// Query with loaded relationship
+const userWithProfile = await User.query()
+  .load("profile")
+  .where("email", "john@example.com")
+  .firstOrFail();
+
+console.log(userWithProfile.profile.bio);
+```
+
+## Has Many Relationship
+
+A has many relationship defines a one-to-many connection.
+
+### Defining Has Many
+
+```typescript
+import { BaseModel, column, hasMany } from "adonis-odm";
+import type { HasMany } from "adonis-odm/types";
+import Post from "./post.js";
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare name: string;
+
+  // Has many relationship
+  @hasMany(() => Post)
+  declare posts: HasMany<typeof Post>;
+}
+```
+
+```typescript
+// Post model
+import { BaseModel, column, belongsTo } from "adonis-odm";
+import type { BelongsTo } from "adonis-odm/types";
+import User from "./user.js";
+
+export default class Post extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare userId: string;
+
+  @column()
+  declare title: string;
+
+  @column()
+  declare content: string;
+
+  @belongsTo(() => User)
+  declare author: BelongsTo<typeof User>;
+}
+```
+
+### Using Has Many
+
+```typescript
+// Create posts for a user
+const user = await User.findOrFail("user123");
+
+await user.related("posts").createMany([
+  { title: "First Post", content: "Hello world!" },
+  { title: "Second Post", content: "MongoDB is great!" },
+]);
+
+// Query posts
+const userPosts = await user.related("posts").query().all();
+
+// Load relationship
+const userWithPosts = await User.query()
+  .load("posts", (query) => {
+    query.orderBy("createdAt", "desc").limit(5);
+  })
+  .findOrFail("user123");
+```
+
+## Belongs To Relationship
+
+Belongs to is the inverse of has one and has many relationships.
+
+### Using Belongs To
+
+```typescript
+// Access parent model
+const post = await Post.query().load("author").findOrFail("post123");
+
+console.log(post.author.name);
+
+// Query through relationship
+const post = await Post.findOrFail("post123");
+const author = await post.related("author").query().firstOrFail();
+```
+
+## Alternative Approaches for Complex Relationships
+
+While many-to-many and has-many-through relationships are planned for future releases, you can achieve similar functionality using these approaches:
+
+### Manual Reference Management
+
+For many-to-many relationships, you can manually manage arrays of references:
+
+```typescript
+// User model with role references
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare name: string;
+
+  @column()
+  declare roleIds: string[]; // Array of role IDs
+
+  // Helper method to get roles
+  async getRoles() {
+    return await Role.query()
+      .whereIn("_id", this.roleIds || [])
+      .all();
+  }
+
+  // Helper method to add role
+  async addRole(roleId: string) {
+    if (!this.roleIds) this.roleIds = [];
+    if (!this.roleIds.includes(roleId)) {
+      this.roleIds.push(roleId);
+      await this.save();
+    }
+  }
+
+  // Helper method to remove role
+  async removeRole(roleId: string) {
+    if (this.roleIds) {
+      this.roleIds = this.roleIds.filter((id) => id !== roleId);
+      await this.save();
+    }
+  }
+}
+```
+
+### Using Embedded Documents
+
+For simpler many-to-many scenarios, consider using embedded documents:
+
+```typescript
+// User model with embedded role information
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare name: string;
+
+  // Embedded roles (denormalized approach)
+  @column.embedded(() => UserRole, "many")
+  declare roles?: EmbeddedMany<typeof UserRole>;
+}
+
+// Embedded role model
+export default class UserRole extends BaseModel {
+  @column()
+  declare roleId: string;
+
+  @column()
+  declare roleName: string;
+
+  @column()
+  declare permissions: string[];
+
+  @column.dateTime({ autoCreate: true })
+  declare assignedAt: DateTime;
+}
+```
+
+### Through Relationships with Manual Queries
+
+For has-many-through scenarios, you can use manual queries:
+
+```typescript
+export default class Country extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare name: string;
+
+  // Helper method to get posts through users
+  async getPosts() {
+    // First get users in this country
+    const users = await User.query().where("countryId", this._id).all();
+    const userIds = users.map((user) => user._id);
+
+    // Then get posts by those users
+    return await Post.query().whereIn("userId", userIds).all();
+  }
+
+  // Helper method with query builder
+  async getPostsQuery() {
+    const users = await User.query().where("countryId", this._id).all();
+    const userIds = users.map((user) => user._id);
+
+    return Post.query().whereIn("userId", userIds);
+  }
+}
+```
+
+## Advanced Relationship Queries
+
+### Loading with Conditions
+
+```typescript
+// Load with conditions
+const users = await User.query()
+  .load("posts", (query) => {
+    query.where("isPublished", true).orderBy("createdAt", "desc").limit(3);
+  })
+  .all();
+
+// Multiple loads
+const users = await User.query()
+  .load("profile")
+  .load("posts", (query) => {
+    query.where("isPublished", true);
+  })
+  .all();
+```
+
+### Manual Relationship Queries
+
+Since advanced relationship querying features are not yet implemented, you can use manual queries:
+
+```typescript
+// Count related records manually
+const users = await User.query().all();
+for (const user of users) {
+  const postCount = await Post.query().where("userId", user._id).count();
+  const publishedPostCount = await Post.query()
+    .where("userId", user._id)
+    .where("isPublished", true)
+    .count();
+
+  console.log(`${user.name} has ${postCount} posts`);
+  console.log(`${user.name} has ${publishedPostCount} published posts`);
+}
+
+// Query users with posts manually
+const userIds = await Post.query().distinct("userId");
+const usersWithPosts = await User.query().whereIn("_id", userIds).all();
+
+// Query users without posts manually
+const usersWithoutPosts = await User.query().whereNotIn("_id", userIds).all();
+```
+
+## Relationship Constraints
+
+### Custom Foreign Keys
+
+```typescript
+export default class User extends BaseModel {
+  @hasMany(() => Post, {
+    foreignKey: "authorId", // Custom foreign key
+    localKey: "_id",
+  })
+  declare posts: HasMany<typeof Post>;
+}
+```
+
+### Relationship Options
+
+```typescript
+export default class User extends BaseModel {
+  @hasOne(() => UserProfile, {
+    foreignKey: "userId",
+    localKey: "_id",
+    onQuery: (query) => {
+      // Add default constraints
+      query.where("isActive", true);
+    },
+  })
+  declare profile: HasOne<typeof UserProfile>;
+}
+```
+
+## Performance Optimization
+
+### Eager Loading
+
+```typescript
+// Efficient: Single query with load
+const users = await User.query().load("posts").all();
+
+// Inefficient: N+1 queries
+const users = await User.query().all();
+for (const user of users) {
+  const posts = await user.related("posts").query().all();
+}
+```
+
+### Selective Loading
+
+```typescript
+// Load only needed fields
+const users = await User.query()
+  .select(["name", "email"])
+  .load("posts", (query) => {
+    query.select(["title", "createdAt"]);
+  })
+  .all();
+```
+
+### Pagination with Relationships
+
+```typescript
+// Paginate main query, load relationships
+const result = await User.query()
+  .load("posts", (query) => {
+    query.orderBy("createdAt", "desc").limit(5);
+  })
+  .paginate(1, 20);
+```
+
+## Best Practices
+
+### Use Embedded Documents for Simple Relationships
+
+When you have data that naturally belongs together, consider using embedded documents instead of references:
+
+```typescript
+// Instead of separate Profile model
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare name: string;
+
+  // Embed profile data directly
+  @column.embedded(() => UserProfile, "single")
+  declare profile?: EmbeddedSingle<typeof UserProfile>;
+}
+```
+
+### Optimize Reference Arrays
+
+When using manual reference management, consider indexing and limiting array sizes:
+
+```typescript
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare name: string;
+
+  // Limit array size for performance
+  @column()
+  declare recentPostIds: string[]; // Only last 10 posts
+
+  @column()
+  declare allPostsCount: number; // Keep count separately
+}
+```
+
+## Next Steps
+
+- **[Database Transactions](/docs/transactions)** - Ensure data consistency across relationships
+- **[Pagination](/docs/pagination)** - Efficiently paginate related data
+- **[Model Lifecycle](/docs/lifecycle)** - Understand relationship hooks
+- **[Examples: Advanced Queries](/examples/advanced-queries)** - Complex relationship examples

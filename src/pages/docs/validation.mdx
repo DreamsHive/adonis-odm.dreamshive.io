@@ -1,0 +1,899 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Validation
+description: Learn how to validate model data in Adonis ODM with built-in validators and custom validation rules
+---
+
+# Validation
+
+Adonis ODM provides comprehensive validation capabilities to ensure data integrity and consistency. This guide covers built-in validators, custom validation rules, and validation patterns for MongoDB documents.
+
+## Basic Validation
+
+### Column-Level Validation
+
+```typescript
+import { BaseModel, column } from 'adonis-odm'
+import { rules } from '@adonisjs/validator'
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.string(),
+      rules.maxLength(100)
+    ]
+  })
+  declare name: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.email(),
+      rules.unique({ table: 'users', column: 'email' })
+    ]
+  })
+  declare email: string
+
+  @column({
+    validate: [
+      rules.number(),
+      rules.range(18, 120)
+    ]
+  })
+  declare age: number
+
+  @column({
+    validate: [
+      rules.string(),
+      rules.in(['active', 'inactive', 'pending'])
+    ]
+  })
+  declare status: string
+}
+```
+
+### Conditional Validation
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare name: string
+
+  @column()
+  declare email: string
+
+  @column()
+  declare role: string
+
+  @column({
+    validate: [
+      // Only validate phone if role is 'admin'
+      rules.requiredIf('role', 'admin'),
+      rules.mobile()
+    ]
+  })
+  declare phone?: string
+
+  @column({
+    validate: [
+      // Only validate department if role is 'employee'
+      rules.requiredWhen('role', 'in', ['employee', 'manager']),
+      rules.string()
+    ]
+  })
+  declare department?: string
+}
+```
+
+## Built-in Validation Rules
+
+### String Validation
+
+```typescript
+export default class Post extends BaseModel {
+  @column({
+    validate: [
+      rules.required(),
+      rules.string(),
+      rules.minLength(5),
+      rules.maxLength(200)
+    ]
+  })
+  declare title: string
+
+  @column({
+    validate: [
+      rules.string(),
+      rules.minLength(100),
+      rules.maxLength(10000)
+    ]
+  })
+  declare content: string
+
+  @column({
+    validate: [
+      rules.string(),
+      rules.regex(/^[a-z0-9-]+$/) // URL-friendly slug
+    ]
+  })
+  declare slug: string
+
+  @column({
+    validate: [
+      rules.url({
+        protocols: ['http', 'https'],
+        requireTld: true
+      })
+    ]
+  })
+  declare featuredImage?: string
+}
+```
+
+### Number Validation
+
+```typescript
+export default class Product extends BaseModel {
+  @column({
+    validate: [
+      rules.required(),
+      rules.number(),
+      rules.range(0.01, 999999.99)
+    ]
+  })
+  declare price: number
+
+  @column({
+    validate: [
+      rules.number(),
+      rules.unsigned(), // Only positive numbers
+      rules.range(0, 10000)
+    ]
+  })
+  declare stock: number
+
+  @column({
+    validate: [
+      rules.number(),
+      rules.range(0, 5),
+      rules.precision(1) // One decimal place
+    ]
+  })
+  declare rating: number
+}
+```
+
+### Date Validation
+
+```typescript
+import { DateTime } from 'luxon'
+
+export default class Event extends BaseModel {
+  @column({
+    validate: [
+      rules.required(),
+      rules.date({
+        format: 'yyyy-MM-dd HH:mm:ss'
+      })
+    ]
+  })
+  declare startDate: DateTime
+
+  @column({
+    validate: [
+      rules.date(),
+      rules.after('startDate') // Must be after start date
+    ]
+  })
+  declare endDate: DateTime
+
+  @column({
+    validate: [
+      rules.date(),
+      rules.beforeOrEqual('today') // Cannot be in the future
+    ]
+  })
+  declare birthDate?: DateTime
+}
+```
+
+### Array Validation
+
+```typescript
+export default class User extends BaseModel {
+  @column({
+    validate: [
+      rules.array(),
+      rules.minLength(1),
+      rules.maxLength(10)
+    ]
+  })
+  declare tags: string[]
+
+  @column({
+    validate: [
+      rules.array(),
+      rules.distinct('email') // All emails must be unique
+    ]
+  })
+  declare contacts: Array<{ name: string, email: string }>
+
+  @column({
+    validate: [
+      rules.array(),
+      rules.arrayMembers([
+        rules.string(),
+        rules.in(['read', 'write', 'admin'])
+      ])
+    ]
+  })
+  declare permissions: string[]
+}
+```
+
+## Custom Validation Rules
+
+### Creating Custom Rules
+
+```typescript
+import { rules, Rule } from '@adonisjs/validator'
+
+// Custom rule for MongoDB ObjectId validation
+const objectId: Rule = {
+  name: 'objectId',
+  compile() {
+    return {
+      compiledOptions: {},
+    }
+  },
+  validate(value, compiledOptions, { pointer, arrayExpressionPointer, errorReporter }) {
+    if (typeof value !== 'string') {
+      return
+    }
+
+    const objectIdRegex = /^[0-9a-fA-F]{24}$/
+    if (!objectIdRegex.test(value)) {
+      errorReporter.report(
+        pointer,
+        'objectId',
+        'The {{ field }} field must be a valid MongoDB ObjectId',
+        arrayExpressionPointer
+      )
+    }
+  },
+}
+
+// Register the custom rule
+rules.objectId = () => objectId
+
+// Usage in model
+export default class Post extends BaseModel {
+  @column({
+    validate: [
+      rules.required(),
+      rules.objectId()
+    ]
+  })
+  declare authorId: string
+}
+```
+
+### Complex Custom Validation
+
+```typescript
+// Custom rule for password strength
+const strongPassword: Rule = {
+  name: 'strongPassword',
+  compile(options: { minLength?: number } = {}) {
+    return {
+      compiledOptions: {
+        minLength: options.minLength || 8
+      },
+    }
+  },
+  validate(value, { minLength }, { pointer, arrayExpressionPointer, errorReporter }) {
+    if (typeof value !== 'string') {
+      return
+    }
+
+    const errors = []
+
+    if (value.length < minLength) {
+      errors.push(`at least ${minLength} characters`)
+    }
+
+    if (!/[A-Z]/.test(value)) {
+      errors.push('at least one uppercase letter')
+    }
+
+    if (!/[a-z]/.test(value)) {
+      errors.push('at least one lowercase letter')
+    }
+
+    if (!/\d/.test(value)) {
+      errors.push('at least one number')
+    }
+
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(value)) {
+      errors.push('at least one special character')
+    }
+
+    if (errors.length > 0) {
+      errorReporter.report(
+        pointer,
+        'strongPassword',
+        `The {{ field }} field must contain ${errors.join(', ')}`,
+        arrayExpressionPointer
+      )
+    }
+  },
+}
+
+rules.strongPassword = (options?: { minLength?: number }) => {
+  return { ...strongPassword, compile: () => strongPassword.compile(options) }
+}
+
+// Usage
+export default class User extends BaseModel {
+  @column({
+    validate: [
+      rules.required(),
+      rules.strongPassword({ minLength: 10 })
+    ]
+  })
+  declare password: string
+}
+```
+
+## Model-Level Validation
+
+### Custom Validation Methods
+
+```typescript
+import { ValidationException } from 'adonis-odm'
+
+export default class User extends BaseModel {
+  @column()
+  declare email: string
+
+  @column()
+  declare age: number
+
+  @column()
+  declare role: string
+
+  @column()
+  declare department?: string
+
+  // Custom validation method
+  public async validateBusinessRules() {
+    const errors: string[] = []
+
+    // Check if admin users have department
+    if (this.role === 'admin' && !this.department) {
+      errors.push('Admin users must have a department assigned')
+    }
+
+    // Check if email domain is allowed for role
+    if (this.role === 'admin' && !this.email.endsWith('@company.com')) {
+      errors.push('Admin users must use company email domain')
+    }
+
+    // Check age restrictions for certain roles
+    if (this.role === 'manager' && this.age < 25) {
+      errors.push('Managers must be at least 25 years old')
+    }
+
+    if (errors.length > 0) {
+      throw new ValidationException(errors.join(', '), 'businessRules', this, [])
+    }
+  }
+
+  // Override save to include custom validation
+  public async save(options?: any) {
+    await this.validateBusinessRules()
+    return super.save(options)
+  }
+}
+```
+
+### Cross-Field Validation
+
+```typescript
+export default class Order extends BaseModel {
+  @column()
+  declare startDate: DateTime
+
+  @column()
+  declare endDate: DateTime
+
+  @column()
+  declare discountPercentage: number
+
+  @column()
+  declare totalAmount: number
+
+  public async validateOrder() {
+    const errors: string[] = []
+
+    // Validate date range
+    if (this.endDate && this.startDate && this.endDate <= this.startDate) {
+      errors.push('End date must be after start date')
+    }
+
+    // Validate discount logic
+    if (this.discountPercentage > 0 && this.totalAmount < 100) {
+      errors.push('Discounts only apply to orders over $100')
+    }
+
+    // Validate maximum discount
+    if (this.discountPercentage > 50) {
+      errors.push('Discount cannot exceed 50%')
+    }
+
+    if (errors.length > 0) {
+      throw new ValidationException(errors.join(', '), 'orderValidation', this, [])
+    }
+  }
+}
+```
+
+## Embedded Document Validation
+
+### Validating Nested Objects
+
+```typescript
+// Embedded document class with validation
+class Address {
+  @column({
+    validate: [
+      rules.required(),
+      rules.string(),
+      rules.maxLength(100)
+    ]
+  })
+  declare street: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.string(),
+      rules.maxLength(50)
+    ]
+  })
+  declare city: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.regex(/^\d{5}(-\d{4})?$/) // US ZIP code format
+    ]
+  })
+  declare zipCode: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.in(['US', 'CA', 'MX'])
+    ]
+  })
+  declare country: string
+}
+
+// Main model with embedded validation
+export default class User extends BaseModel {
+  @column()
+  declare name: string
+
+  @embedded(Address, {
+    validate: [
+      rules.required(),
+      rules.object()
+    ]
+  })
+  declare address: Address
+
+  @embedded([Address], {
+    validate: [
+      rules.array(),
+      rules.maxLength(5) // Maximum 5 addresses
+    ]
+  })
+  declare additionalAddresses: Address[]
+}
+```
+
+### Array of Objects Validation
+
+```typescript
+class OrderItem {
+  @column({
+    validate: [
+      rules.required(),
+      rules.string()
+    ]
+  })
+  declare productId: string
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.number(),
+      rules.range(1, 1000)
+    ]
+  })
+  declare quantity: number
+
+  @column({
+    validate: [
+      rules.required(),
+      rules.number(),
+      rules.range(0.01, 10000)
+    ]
+  })
+  declare price: number
+}
+
+export default class Order extends BaseModel {
+  @embedded([OrderItem], {
+    validate: [
+      rules.required(),
+      rules.array(),
+      rules.minLength(1),
+      rules.maxLength(50)
+    ]
+  })
+  declare items: OrderItem[]
+
+  // Custom validation for order totals
+  public async validateOrderTotals() {
+    const calculatedTotal = this.items.reduce(
+      (sum, item) => sum + (item.quantity * item.price), 
+      0
+    )
+
+    if (Math.abs(this.total - calculatedTotal) > 0.01) {
+      throw new ValidationException(
+        'Order total does not match sum of items',
+        'total',
+        this.total,
+        ['orderTotalMismatch']
+      )
+    }
+  }
+}
+```
+
+## Validation Hooks
+
+### Pre-Save Validation
+
+```typescript
+import { beforeSave } from 'adonis-odm'
+
+export default class User extends BaseModel {
+  @column()
+  declare email: string
+
+  @column()
+  declare username: string
+
+  @beforeSave()
+  public static async validateUniqueFields(user: User) {
+    // Check email uniqueness
+    if (user.$dirty.email) {
+      const existingUser = await User.query()
+        .where('email', user.email)
+        .where('_id', '!=', user._id || '')
+        .first()
+
+      if (existingUser) {
+        throw new ValidationException(
+          'Email already exists',
+          'email',
+          user.email,
+          ['unique']
+        )
+      }
+    }
+
+    // Check username uniqueness
+    if (user.$dirty.username) {
+      const existingUser = await User.query()
+        .where('username', user.username)
+        .where('_id', '!=', user._id || '')
+        .first()
+
+      if (existingUser) {
+        throw new ValidationException(
+          'Username already exists',
+          'username',
+          user.username,
+          ['unique']
+        )
+      }
+    }
+  }
+
+  @beforeSave()
+  public static async normalizeData(user: User) {
+    // Normalize email
+    if (user.$dirty.email) {
+      user.email = user.email.toLowerCase().trim()
+    }
+
+    // Normalize username
+    if (user.$dirty.username) {
+      user.username = user.username.toLowerCase().trim()
+    }
+  }
+}
+```
+
+## Async Validation
+
+### External API Validation
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare email: string
+
+  @column()
+  declare vatNumber?: string
+
+  public async validateVatNumber() {
+    if (!this.vatNumber) return
+
+    try {
+      // Simulate external VAT validation service
+      const response = await fetch(`https://api.vatvalidation.com/check/${this.vatNumber}`)
+      const result = await response.json()
+
+      if (!result.valid) {
+        throw new ValidationException(
+          'Invalid VAT number',
+          'vatNumber',
+          this.vatNumber,
+          ['invalidVat']
+        )
+      }
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        throw error
+      }
+      
+      // Log external service errors but don't fail validation
+      console.error('VAT validation service error:', error)
+    }
+  }
+
+  @beforeSave()
+  public static async performAsyncValidation(user: User) {
+    await user.validateVatNumber()
+  }
+}
+```
+
+## Error Handling
+
+### Validation Error Responses
+
+```typescript
+import { ValidationException } from 'adonis-odm'
+
+export default class UserController {
+  public async store({ request, response }: HttpContext) {
+    try {
+      const userData = request.only(['name', 'email', 'age'])
+      const user = await User.create(userData)
+      
+      return response.status(201).json(user)
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        return response.status(422).json({
+          error: 'Validation failed',
+          message: error.message,
+          field: error.field,
+          value: error.value,
+          rules: error.rules
+        })
+      }
+      
+      throw error
+    }
+  }
+
+  public async update({ params, request, response }: HttpContext) {
+    try {
+      const user = await User.findOrFail(params.id)
+      const userData = request.only(['name', 'email', 'age'])
+      
+      user.merge(userData)
+      await user.save()
+      
+      return response.json(user)
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        return response.status(422).json({
+          error: 'Validation failed',
+          details: {
+            field: error.field,
+            message: error.message,
+            value: error.value
+          }
+        })
+      }
+      
+      throw error
+    }
+  }
+}
+```
+
+### Bulk Validation Errors
+
+```typescript
+export default class UserService {
+  public async createMultipleUsers(usersData: any[]) {
+    const results = []
+    const errors = []
+
+    for (let i = 0; i < usersData.length; i++) {
+      try {
+        const user = await User.create(usersData[i])
+        results.push({ index: i, success: true, user })
+      } catch (error) {
+        if (error instanceof ValidationException) {
+          errors.push({
+            index: i,
+            success: false,
+            error: {
+              field: error.field,
+              message: error.message,
+              value: error.value
+            }
+          })
+        } else {
+          errors.push({
+            index: i,
+            success: false,
+            error: { message: error.message }
+          })
+        }
+      }
+    }
+
+    return {
+      successful: results,
+      failed: errors,
+      summary: {
+        total: usersData.length,
+        successful: results.length,
+        failed: errors.length
+      }
+    }
+  }
+}
+```
+
+## Testing Validation
+
+### Validation Tests
+
+```typescript
+import { test } from '@japa/runner'
+import { ValidationException } from 'adonis-odm'
+import User from '#models/user'
+
+test.group('User Validation', () => {
+  test('should validate required fields', async ({ assert }) => {
+    await assert.rejects(
+      async () => {
+        await User.create({
+          // Missing required name field
+          email: 'test@example.com'
+        })
+      },
+      ValidationException
+    )
+  })
+
+  test('should validate email format', async ({ assert }) => {
+    await assert.rejects(
+      async () => {
+        await User.create({
+          name: 'Test User',
+          email: 'invalid-email'
+        })
+      },
+      ValidationException
+    )
+  })
+
+  test('should validate custom business rules', async ({ assert }) => {
+    const user = new User()
+    user.fill({
+      name: 'Admin User',
+      email: 'admin@external.com',
+      role: 'admin'
+    })
+
+    await assert.rejects(
+      async () => await user.save(),
+      ValidationException
+    )
+  })
+})
+```
+
+## Best Practices
+
+### 1. Layer Validation Appropriately
+
+```typescript
+// Good: Basic validation at column level
+@column({
+  validate: [rules.required(), rules.email()]
+})
+declare email: string
+
+// Good: Business logic validation in methods
+public async validateBusinessRules() {
+  // Complex business validation logic
+}
+
+// Good: Input validation in controllers
+public async store({ request }: HttpContext) {
+  const payload = await request.validate({
+    schema: schema.create({
+      name: schema.string(),
+      email: schema.string([rules.email()])
+    })
+  })
+}
+```
+
+### 2. Provide Clear Error Messages
+
+```typescript
+// Good: Descriptive error messages
+const strongPassword: Rule = {
+  validate(value, options, { errorReporter, pointer }) {
+    if (!isStrongPassword(value)) {
+      errorReporter.report(
+        pointer,
+        'strongPassword',
+        'Password must contain at least 8 characters, including uppercase, lowercase, number, and special character',
+        arrayExpressionPointer
+      )
+    }
+  }
+}
+```
+
+### 3. Handle Validation Gracefully
+
+```typescript
+// Good: Graceful error handling
+try {
+  await user.save()
+} catch (error) {
+  if (error instanceof ValidationException) {
+    // Handle validation error appropriately
+    return { success: false, errors: [error.message] }
+  }
+  throw error // Re-throw unexpected errors
+}
+```
+
+## Next Steps
+
+- **[Error Handling](/docs/error-handling)** - Handle validation errors effectively
+- **[Testing](/docs/testing)** - Test your validation rules
+- **[Model Lifecycle](/docs/lifecycle)** - Use validation in lifecycle hooks
+- **[Performance Optimization](/docs/performance)** - Optimize validation performance

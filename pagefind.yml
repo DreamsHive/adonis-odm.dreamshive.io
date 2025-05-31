@@ -1,0 +1,41 @@
+# Pagefind Configuration
+# This file configures how Pagefind indexes the documentation site
+
+# Source directory (where the built site is located)
+site: dist
+
+# Output subdirectory for search files
+output_subdir: pagefind
+
+# Root selector - only index content within this selector
+root_selector: "main, [data-pagefind-body]"
+
+# Exclude these selectors from indexing
+exclude_selectors:
+  - "nav"
+  - "header"
+  - "footer"
+  - ".sidebar"
+  - "[data-pagefind-ignore]"
+  - "[data-pagefind-ignore] *"
+  - ".table-of-contents"
+  - ".breadcrumb"
+  - ".pagination"
+  - "script"
+  - "style"
+  - ".code-toolbar"
+
+# Include these characters in the search index (useful for code searches)
+include_characters: "<>(){}[].,;:!?@#$%^&*+=|\\\"'`~_-"
+
+# Force language detection
+force_language: "en"
+
+# Verbose output during indexing
+verbose: true
+
+# Keep the original URLs in the index
+keep_index_url: true
+
+# Generate a playground for testing (useful for development)
+write_playground: false

@@ -1,0 +1,633 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Connection Management
+description: Learn how to manage MongoDB connections, connection pooling, and multi-database setups in Adonis ODM
+---
+
+# Connection Management
+
+Adonis ODM provides robust connection management features for MongoDB, including connection pooling, multiple database support, and connection health monitoring. This guide covers everything you need to know about managing database connections effectively.
+
+## Connection Configuration
+
+### Basic Connection Setup
+
+```typescript
+// config/odm.ts
+import env from '#start/env'
+import { defineConfig } from 'adonis-odm'
+
+const odmConfig = defineConfig({
+  connection: 'mongodb',
+
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        host: env.get('MONGO_HOST', 'localhost'),
+        port: env.get('MONGO_PORT', 27017),
+        database: env.get('MONGO_DATABASE'),
+        username: env.get('MONGO_USERNAME'),
+        password: env.get('MONGO_PASSWORD'),
+      },
+      pool: {
+        min: 2,
+        max: 10,
+        acquireTimeoutMillis: 30000,
+        createTimeoutMillis: 30000,
+        destroyTimeoutMillis: 5000,
+        idleTimeoutMillis: 30000,
+        reapIntervalMillis: 1000,
+        createRetryIntervalMillis: 200,
+      }
+    }
+  }
+})
+
+export default odmConfig
+```
+
+### Connection String Configuration
+
+```typescript
+// Using MongoDB connection string
+const odmConfig = defineConfig({
+  connection: 'mongodb',
+
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        connectionString: env.get('MONGO_URI', 'mongodb://localhost:27017/myapp')
+      },
+      pool: {
+        min: 2,
+        max: 20
+      }
+    }
+  }
+})
+```
+
+### Advanced Connection Options
+
+```typescript
+const odmConfig = defineConfig({
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        host: env.get('MONGO_HOST'),
+        port: env.get('MONGO_PORT'),
+        database: env.get('MONGO_DATABASE'),
+        username: env.get('MONGO_USERNAME'),
+        password: env.get('MONGO_PASSWORD'),
+        
+        // SSL/TLS options
+        ssl: true,
+        sslValidate: true,
+        sslCA: env.get('MONGO_SSL_CA'),
+        sslCert: env.get('MONGO_SSL_CERT'),
+        sslKey: env.get('MONGO_SSL_KEY'),
+        
+        // Authentication options
+        authSource: 'admin',
+        authMechanism: 'SCRAM-SHA-256',
+        
+        // Connection options
+        connectTimeoutMS: 30000,
+        socketTimeoutMS: 30000,
+        serverSelectionTimeoutMS: 30000,
+        maxPoolSize: 10,
+        minPoolSize: 2,
+        maxIdleTimeMS: 30000,
+        
+        // Replica set options
+        replicaSet: 'myReplicaSet',
+        readPreference: 'primaryPreferred',
+        
+        // Write concern
+        w: 'majority',
+        j: true,
+        wtimeoutMS: 5000
+      }
+    }
+  }
+})
+```
+
+## Multiple Database Connections
+
+### Defining Multiple Connections
+
+```typescript
+const odmConfig = defineConfig({
+  connection: 'primary',
+
+  connections: {
+    primary: {
+      client: 'mongodb',
+      connection: {
+        host: 'primary-db.example.com',
+        database: 'main_app'
+      }
+    },
+    
+    analytics: {
+      client: 'mongodb',
+      connection: {
+        host: 'analytics-db.example.com',
+        database: 'analytics'
+      }
+    },
+    
+    logs: {
+      client: 'mongodb',
+      connection: {
+        host: 'logs-db.example.com',
+        database: 'application_logs'
+      }
+    }
+  }
+})
+```
+
+### Using Different Connections in Models
+
+```typescript
+// Primary database model
+export default class User extends BaseModel {
+  static connection = 'primary' // Uses primary connection
+  
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare name: string
+}
+
+// Analytics database model
+export default class UserAnalytics extends BaseModel {
+  static connection = 'analytics' // Uses analytics connection
+  
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare userId: string
+
+  @column()
+  declare pageViews: number
+}
+
+// Logs database model
+export default class ApplicationLog extends BaseModel {
+  static connection = 'logs' // Uses logs connection
+  
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare level: string
+
+  @column()
+  declare message: string
+}
+```
+
+### Runtime Connection Selection
+
+```typescript
+// Query specific connection
+const users = await User.query()
+  .connection('primary')
+  .all()
+
+// Use different connection for specific operation
+const analytics = await UserAnalytics.query()
+  .connection('analytics')
+  .where('userId', userId)
+  .all()
+
+// Transaction on specific connection
+await Database.transaction(async (trx) => {
+  const user = await User.create(userData, { client: trx })
+  const log = await ApplicationLog.create(logData, { client: trx })
+}, { connection: 'primary' })
+```
+
+## Connection Pooling
+
+### Pool Configuration
+
+```typescript
+const odmConfig = defineConfig({
+  connections: {
+    mongodb: {
+      connection: {
+        // Connection details
+      },
+      pool: {
+        // Minimum connections to maintain
+        min: 2,
+        
+        // Maximum connections in pool
+        max: 20,
+        
+        // Time to wait for connection (ms)
+        acquireTimeoutMillis: 30000,
+        
+        // Time to wait for connection creation (ms)
+        createTimeoutMillis: 30000,
+        
+        // Time to wait for connection destruction (ms)
+        destroyTimeoutMillis: 5000,
+        
+        // Time before idle connection is destroyed (ms)
+        idleTimeoutMillis: 30000,
+        
+        // How often to check for idle connections (ms)
+        reapIntervalMillis: 1000,
+        
+        // Interval between connection creation retries (ms)
+        createRetryIntervalMillis: 200,
+        
+        // Validate connections before use
+        testOnBorrow: true,
+        
+        // Validate connections when returned
+        testOnReturn: false
+      }
+    }
+  }
+})
+```
+
+### Pool Monitoring
+
+```typescript
+import Database from '@ioc:Adonis/Lucid/Database'
+
+// Get pool statistics
+const poolStats = Database.connection('mongodb').pool.stats()
+console.log('Pool stats:', {
+  size: poolStats.size,
+  available: poolStats.available,
+  borrowed: poolStats.borrowed,
+  invalid: poolStats.invalid,
+  pending: poolStats.pending
+})
+
+// Monitor pool events
+Database.connection('mongodb').pool.on('createRequest', () => {
+  console.log('Connection creation requested')
+})
+
+Database.connection('mongodb').pool.on('createSuccess', () => {
+  console.log('Connection created successfully')
+})
+
+Database.connection('mongodb').pool.on('createFail', (error) => {
+  console.error('Connection creation failed:', error)
+})
+
+Database.connection('mongodb').pool.on('destroySuccess', () => {
+  console.log('Connection destroyed')
+})
+```
+
+## Connection Health Monitoring
+
+### Health Check Implementation
+
+```typescript
+import Database from '@ioc:Adonis/Lucid/Database'
+
+class DatabaseHealthCheck {
+  public async check() {
+    const connections = ['primary', 'analytics', 'logs']
+    const results = {}
+
+    for (const connectionName of connections) {
+      try {
+        const connection = Database.connection(connectionName)
+        
+        // Test connection with ping
+        await connection.rawQuery({ ping: 1 })
+        
+        // Get connection stats
+        const stats = connection.pool.stats()
+        
+        results[connectionName] = {
+          status: 'healthy',
+          pool: {
+            size: stats.size,
+            available: stats.available,
+            borrowed: stats.borrowed
+          }
+        }
+      } catch (error) {
+        results[connectionName] = {
+          status: 'unhealthy',
+          error: error.message
+        }
+      }
+    }
+
+    return results
+  }
+
+  public async checkConnection(connectionName: string) {
+    try {
+      const connection = Database.connection(connectionName)
+      
+      // Ping database
+      const start = Date.now()
+      await connection.rawQuery({ ping: 1 })
+      const responseTime = Date.now() - start
+
+      return {
+        status: 'healthy',
+        responseTime,
+        pool: connection.pool.stats()
+      }
+    } catch (error) {
+      return {
+        status: 'unhealthy',
+        error: error.message
+      }
+    }
+  }
+}
+
+// Usage in health check endpoint
+export default class HealthController {
+  public async database({ response }: HttpContextContract) {
+    const healthCheck = new DatabaseHealthCheck()
+    const results = await healthCheck.check()
+    
+    const allHealthy = Object.values(results).every(
+      result => result.status === 'healthy'
+    )
+
+    return response.status(allHealthy ? 200 : 503).json({
+      status: allHealthy ? 'healthy' : 'unhealthy',
+      connections: results
+    })
+  }
+}
+```
+
+### Automatic Reconnection
+
+```typescript
+// Connection with retry logic
+class ConnectionManager {
+  private maxRetries = 3
+  private retryDelay = 1000
+
+  public async withRetry<T>(
+    operation: () => Promise<T>,
+    connectionName: string = 'mongodb'
+  ): Promise<T> {
+    let lastError: Error
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await operation()
+      } catch (error) {
+        lastError = error
+
+        if (this.isConnectionError(error) && attempt < this.maxRetries) {
+          console.log(`Connection attempt ${attempt} failed, retrying...`)
+          
+          // Wait before retry
+          await this.delay(this.retryDelay * attempt)
+          
+          // Try to reconnect
+          await this.reconnect(connectionName)
+          continue
+        }
+
+        throw error
+      }
+    }
+
+    throw lastError!
+  }
+
+  private isConnectionError(error: any): boolean {
+    return error.name === 'MongoNetworkError' ||
+           error.name === 'MongoServerSelectionError' ||
+           error.code === 'ECONNREFUSED'
+  }
+
+  private async reconnect(connectionName: string) {
+    try {
+      const connection = Database.connection(connectionName)
+      await connection.disconnect()
+      await connection.connect()
+    } catch (error) {
+      console.error('Reconnection failed:', error)
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+}
+```
+
+## Connection Lifecycle Management
+
+### Application Startup
+
+```typescript
+// start/database.ts
+import Database from '@ioc:Adonis/Lucid/Database'
+
+export default class DatabaseProvider {
+  public async ready() {
+    // Test all connections on startup
+    const connections = ['primary', 'analytics', 'logs']
+    
+    for (const connectionName of connections) {
+      try {
+        await Database.connection(connectionName).rawQuery({ ping: 1 })
+        console.log(`✅ ${connectionName} connection established`)
+      } catch (error) {
+        console.error(`❌ ${connectionName} connection failed:`, error.message)
+        throw error
+      }
+    }
+  }
+
+  public async shutdown() {
+    // Gracefully close all connections
+    const connections = ['primary', 'analytics', 'logs']
+    
+    for (const connectionName of connections) {
+      try {
+        await Database.connection(connectionName).disconnect()
+        console.log(`🔌 ${connectionName} connection closed`)
+      } catch (error) {
+        console.error(`Error closing ${connectionName}:`, error.message)
+      }
+    }
+  }
+}
+```
+
+### Graceful Shutdown
+
+```typescript
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, shutting down gracefully...')
+  
+  try {
+    // Close all database connections
+    await Database.manager.closeAll()
+    console.log('All database connections closed')
+    
+    process.exit(0)
+  } catch (error) {
+    console.error('Error during shutdown:', error)
+    process.exit(1)
+  }
+})
+
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT, shutting down gracefully...')
+  
+  try {
+    await Database.manager.closeAll()
+    process.exit(0)
+  } catch (error) {
+    console.error('Error during shutdown:', error)
+    process.exit(1)
+  }
+})
+```
+
+## Performance Optimization
+
+### Connection Tuning
+
+```typescript
+// Production-optimized configuration
+const odmConfig = defineConfig({
+  connections: {
+    mongodb: {
+      connection: {
+        // Optimize for production
+        maxPoolSize: 50,
+        minPoolSize: 5,
+        maxIdleTimeMS: 30000,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+        
+        // Read preference for scaling
+        readPreference: 'secondaryPreferred',
+        
+        // Write concern for performance
+        w: 1,
+        j: false,
+        wtimeoutMS: 5000
+      },
+      pool: {
+        min: 5,
+        max: 50,
+        acquireTimeoutMillis: 10000,
+        idleTimeoutMillis: 30000
+      }
+    }
+  }
+})
+```
+
+### Connection Monitoring
+
+```typescript
+// Monitor connection performance
+class ConnectionMonitor {
+  private metrics = new Map()
+
+  public startMonitoring() {
+    setInterval(() => {
+      this.collectMetrics()
+    }, 30000) // Every 30 seconds
+  }
+
+  private async collectMetrics() {
+    const connections = ['primary', 'analytics', 'logs']
+    
+    for (const connectionName of connections) {
+      try {
+        const connection = Database.connection(connectionName)
+        const stats = connection.pool.stats()
+        
+        this.metrics.set(connectionName, {
+          timestamp: new Date(),
+          poolSize: stats.size,
+          available: stats.available,
+          borrowed: stats.borrowed,
+          pending: stats.pending
+        })
+        
+        // Log warnings for pool exhaustion
+        if (stats.available === 0 && stats.pending > 0) {
+          console.warn(`⚠️  Connection pool exhausted for ${connectionName}`)
+        }
+      } catch (error) {
+        console.error(`Error collecting metrics for ${connectionName}:`, error)
+      }
+    }
+  }
+
+  public getMetrics(connectionName?: string) {
+    if (connectionName) {
+      return this.metrics.get(connectionName)
+    }
+    return Object.fromEntries(this.metrics)
+  }
+}
+```
+
+## Testing Connections
+
+### Connection Testing
+
+```typescript
+import { test } from '@japa/runner'
+import Database from '@ioc:Adonis/Lucid/Database'
+
+test.group('Database connections', () => {
+  test('should connect to primary database', async ({ assert }) => {
+    const result = await Database.connection('primary').rawQuery({ ping: 1 })
+    assert.equal(result.ok, 1)
+  })
+
+  test('should handle connection failures gracefully', async ({ assert }) => {
+    // Test with invalid connection
+    await assert.rejects(async () => {
+      await Database.connection('invalid').rawQuery({ ping: 1 })
+    })
+  })
+
+  test('should maintain connection pool', async ({ assert }) => {
+    const connection = Database.connection('primary')
+    const stats = connection.pool.stats()
+    
+    assert.isTrue(stats.size >= 2) // Minimum pool size
+    assert.isTrue(stats.size <= 20) // Maximum pool size
+  })
+})
+```
+
+## Next Steps
+
+- **[Pagination](/docs/pagination)** - Efficiently paginate large datasets
+- **[Model Lifecycle](/docs/lifecycle)** - Understand connection hooks
+- **[Database Manager API](/api/database-manager)** - Complete API reference
+- **[Configuration](/docs/configuration)** - Advanced configuration options

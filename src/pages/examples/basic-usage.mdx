@@ -1,0 +1,638 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Basic Usage Examples
+description: Learn Adonis ODM basics with practical examples covering models, queries, and CRUD operations
+---
+
+# Basic Usage Examples
+
+This guide provides practical examples to get you started with Adonis ODM. We'll cover the most common use cases and patterns you'll encounter when building applications.
+
+## Setting Up Your First Model
+
+### User Model
+
+```typescript
+// app/models/user.ts
+import { BaseModel, column } from 'adonis-odm'
+import { DateTime } from 'luxon'
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare name: string
+
+  @column()
+  declare email: string
+
+  @column()
+  declare password: string
+
+  @column()
+  declare age: number
+
+  @column()
+  declare status: 'active' | 'inactive' | 'pending'
+
+  @column()
+  declare role: 'user' | 'admin' | 'moderator'
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+```
+
+### Post Model
+
+```typescript
+// app/models/post.ts
+import { BaseModel, column, belongsTo } from 'adonis-odm'
+import { DateTime } from 'luxon'
+import type { BelongsTo } from 'adonis-odm/types'
+import User from './user.js'
+
+export default class Post extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare title: string
+
+  @column()
+  declare content: string
+
+  @column()
+  declare slug: string
+
+  @column()
+  declare authorId: string
+
+  @column()
+  declare isPublished: boolean
+
+  @column()
+  declare tags: string[]
+
+  @column()
+  declare viewCount: number
+
+  @column.dateTime()
+  declare publishedAt: DateTime | null
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+
+  @belongsTo(() => User)
+  declare author: BelongsTo<typeof User>
+}
+```
+
+## Basic CRUD Operations
+
+### Creating Records
+
+```typescript
+// Create a single user
+const user = await User.create({
+  name: 'John Doe',
+  email: 'john@example.com',
+  password: 'hashedPassword',
+  age: 30,
+  status: 'active',
+  role: 'user'
+})
+
+console.log('Created user:', user._id)
+
+// Create multiple users
+const users = await User.createMany([
+  {
+    name: 'Alice Smith',
+    email: 'alice@example.com',
+    password: 'hashedPassword',
+    age: 28,
+    status: 'active',
+    role: 'user'
+  },
+  {
+    name: 'Bob Johnson',
+    email: 'bob@example.com',
+    password: 'hashedPassword',
+    age: 35,
+    status: 'pending',
+    role: 'moderator'
+  }
+])
+
+console.log(`Created ${users.length} users`)
+```
+
+### Reading Records
+
+```typescript
+// Find all users
+const allUsers = await User.query().all()
+
+// Find user by ID
+const user = await User.find('507f1f77bcf86cd799439011')
+if (user) {
+  console.log('Found user:', user.name)
+}
+
+// Find user by ID or throw error
+const userOrFail = await User.findOrFail('507f1f77bcf86cd799439011')
+
+// Find first user matching criteria
+const activeUser = await User.query()
+  .where('status', 'active')
+  .first()
+
+// Find all active users
+const activeUsers = await User.query()
+  .where('status', 'active')
+  .all()
+
+// Find users with specific roles
+const admins = await User.query()
+  .whereIn('role', ['admin', 'moderator'])
+  .all()
+
+// Find users by age range
+const adults = await User.query()
+  .whereBetween('age', [18, 65])
+  .all()
+```
+
+### Updating Records
+
+```typescript
+// Update using model instance
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+user.name = 'John Smith'
+user.age = 31
+await user.save()
+
+// Update using merge
+const user2 = await User.findOrFail('507f1f77bcf86cd799439012')
+user2.merge({
+  name: 'Jane Doe',
+  status: 'active'
+})
+await user2.save()
+
+// Direct update without fetching
+const affectedRows = await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .update({
+    name: 'Updated Name',
+    updatedAt: DateTime.now()
+  })
+
+// Bulk update
+const bulkUpdate = await User.query()
+  .where('status', 'pending')
+  .update({
+    status: 'active'
+  })
+
+console.log(`Updated ${bulkUpdate} users`)
+```
+
+### Deleting Records
+
+```typescript
+// Delete using model instance
+const user = await User.findOrFail('507f1f77bcf86cd799439011')
+await user.delete()
+
+// Direct delete
+const deletedCount = await User.query()
+  .where('_id', '507f1f77bcf86cd799439011')
+  .delete()
+
+// Bulk delete
+const bulkDelete = await User.query()
+  .where('status', 'inactive')
+  .where('createdAt', '<', DateTime.now().minus({ months: 6 }))
+  .delete()
+
+console.log(`Deleted ${bulkDelete} inactive users`)
+```
+
+## Working with Queries
+
+### Basic Filtering
+
+```typescript
+// Simple where clauses
+const activeUsers = await User.query()
+  .where('status', 'active')
+  .all()
+
+// Multiple conditions (AND)
+const youngAdults = await User.query()
+  .where('age', '>=', 18)
+  .where('age', '<', 30)
+  .where('status', 'active')
+  .all()
+
+// OR conditions
+const specialUsers = await User.query()
+  .where('role', 'admin')
+  .orWhere('role', 'moderator')
+  .all()
+
+// Complex conditions with grouping
+const complexQuery = await User.query()
+  .where('status', 'active')
+  .where((query) => {
+    query
+      .where('role', 'admin')
+      .orWhere((subQuery) => {
+        subQuery
+          .where('role', 'user')
+          .where('age', '>=', 21)
+      })
+  })
+  .all()
+```
+
+### Sorting and Limiting
+
+```typescript
+// Order by single field
+const recentUsers = await User.query()
+  .orderBy('createdAt', 'desc')
+  .limit(10)
+  .all()
+
+// Order by multiple fields
+const sortedUsers = await User.query()
+  .orderBy('status', 'asc')
+  .orderBy('createdAt', 'desc')
+  .all()
+
+// Pagination
+const page = 1
+const perPage = 20
+const paginatedUsers = await User.query()
+  .where('status', 'active')
+  .orderBy('createdAt', 'desc')
+  .paginate(page, perPage)
+
+console.log('Users:', paginatedUsers.data)
+console.log('Total:', paginatedUsers.meta.total)
+console.log('Current page:', paginatedUsers.meta.page)
+```
+
+### Field Selection
+
+```typescript
+// Select specific fields
+const userSummary = await User.query()
+  .select('name', 'email', 'status')
+  .where('status', 'active')
+  .all()
+
+// Exclude sensitive fields
+const publicUsers = await User.query()
+  .select('*')
+  .deselect('password')
+  .all()
+```
+
+## Working with Relationships
+
+### Creating Related Records
+
+```typescript
+// Create post with author
+const author = await User.findOrFail('507f1f77bcf86cd799439011')
+
+const post = await Post.create({
+  title: 'My First Blog Post',
+  content: 'This is the content of my first blog post...',
+  slug: 'my-first-blog-post',
+  authorId: author._id,
+  isPublished: true,
+  tags: ['javascript', 'mongodb', 'adonis'],
+  viewCount: 0,
+  publishedAt: DateTime.now()
+})
+
+// Create post using relationship
+const post2 = await author.related('posts').create({
+  title: 'Another Post',
+  content: 'More content...',
+  slug: 'another-post',
+  isPublished: false,
+  tags: ['tutorial'],
+  viewCount: 0
+})
+```
+
+### Querying with Relationships
+
+```typescript
+// Preload author information
+const postsWithAuthors = await Post.query()
+  .preload('author', (query) => {
+    query.select('name', 'email')
+  })
+  .where('isPublished', true)
+  .all()
+
+// Access preloaded data
+postsWithAuthors.forEach(post => {
+  console.log(`${post.title} by ${post.author.name}`)
+})
+
+// Query posts by author
+const johnsPosts = await Post.query()
+  .whereHas('author', (query) => {
+    query.where('name', 'like', '%John%')
+  })
+  .all()
+```
+
+## Aggregation Examples
+
+### Counting Records
+
+```typescript
+// Simple count
+const userCount = await User.query().count()
+console.log(`Total users: ${userCount}`)
+
+// Count with conditions
+const activeUserCount = await User.query()
+  .where('status', 'active')
+  .count()
+
+// Count by groups
+const usersByRole = await User.query()
+  .groupBy('role')
+  .count()
+```
+
+### Advanced Aggregation
+
+```typescript
+// User statistics
+const userStats = await User.query()
+  .aggregate([
+    {
+      $group: {
+        _id: '$role',
+        count: { $sum: 1 },
+        avgAge: { $avg: '$age' },
+        minAge: { $min: '$age' },
+        maxAge: { $max: '$age' }
+      }
+    },
+    {
+      $sort: { count: -1 }
+    }
+  ])
+
+console.log('User statistics by role:', userStats)
+
+// Monthly user registration
+const monthlyRegistrations = await User.query()
+  .aggregate([
+    {
+      $group: {
+        _id: {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' }
+        },
+        count: { $sum: 1 }
+      }
+    },
+    {
+      $sort: {
+        '_id.year': -1,
+        '_id.month': -1
+      }
+    }
+  ])
+```
+
+## Error Handling
+
+### Common Error Patterns
+
+```typescript
+// Handle not found errors
+try {
+  const user = await User.findOrFail('invalid-id')
+} catch (error) {
+  if (error.code === 'E_ROW_NOT_FOUND') {
+    console.log('User not found')
+    // Handle gracefully
+  } else {
+    throw error
+  }
+}
+
+// Handle validation errors
+try {
+  const user = await User.create({
+    email: 'invalid-email' // This might fail validation
+  })
+} catch (error) {
+  if (error.code === 'E_VALIDATION_FAILURE') {
+    console.log('Validation errors:', error.messages)
+  } else {
+    throw error
+  }
+}
+
+// Handle duplicate key errors
+try {
+  const user = await User.create({
+    email: 'existing@example.com' // Email already exists
+  })
+} catch (error) {
+  if (error.code === 11000) { // MongoDB duplicate key error
+    console.log('Email already exists')
+  } else {
+    throw error
+  }
+}
+```
+
+## Practical Examples
+
+### User Registration
+
+```typescript
+async function registerUser(userData: {
+  name: string
+  email: string
+  password: string
+  age: number
+}) {
+  try {
+    // Check if email already exists
+    const existingUser = await User.query()
+      .where('email', userData.email)
+      .first()
+
+    if (existingUser) {
+      throw new Error('Email already registered')
+    }
+
+    // Create new user
+    const user = await User.create({
+      ...userData,
+      status: 'pending',
+      role: 'user'
+    })
+
+    console.log('User registered successfully:', user._id)
+    return user
+  } catch (error) {
+    console.error('Registration failed:', error.message)
+    throw error
+  }
+}
+
+// Usage
+const newUser = await registerUser({
+  name: 'Jane Doe',
+  email: 'jane@example.com',
+  password: 'hashedPassword',
+  age: 25
+})
+```
+
+### Blog Post Management
+
+```typescript
+async function createBlogPost(authorId: string, postData: {
+  title: string
+  content: string
+  tags: string[]
+  publish: boolean
+}) {
+  try {
+    // Verify author exists
+    const author = await User.findOrFail(authorId)
+
+    // Generate slug from title
+    const slug = postData.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+
+    // Create post
+    const post = await Post.create({
+      title: postData.title,
+      content: postData.content,
+      slug,
+      authorId: author._id,
+      isPublished: postData.publish,
+      tags: postData.tags,
+      viewCount: 0,
+      publishedAt: postData.publish ? DateTime.now() : null
+    })
+
+    console.log('Post created:', post.title)
+    return post
+  } catch (error) {
+    console.error('Failed to create post:', error.message)
+    throw error
+  }
+}
+
+// Usage
+const newPost = await createBlogPost('507f1f77bcf86cd799439011', {
+  title: 'Getting Started with Adonis ODM',
+  content: 'In this post, we will explore...',
+  tags: ['adonis', 'mongodb', 'tutorial'],
+  publish: true
+})
+```
+
+### Search and Filter
+
+```typescript
+async function searchPosts(filters: {
+  query?: string
+  author?: string
+  tags?: string[]
+  published?: boolean
+  page?: number
+  perPage?: number
+}) {
+  const query = Post.query()
+
+  // Text search
+  if (filters.query) {
+    query.where((subQuery) => {
+      subQuery
+        .where('title', 'like', `%${filters.query}%`)
+        .orWhere('content', 'like', `%${filters.query}%`)
+    })
+  }
+
+  // Filter by author
+  if (filters.author) {
+    query.whereHas('author', (authorQuery) => {
+      authorQuery.where('name', 'like', `%${filters.author}%`)
+    })
+  }
+
+  // Filter by tags
+  if (filters.tags && filters.tags.length > 0) {
+    query.whereArrayContainsAny('tags', filters.tags)
+  }
+
+  // Filter by published status
+  if (filters.published !== undefined) {
+    query.where('isPublished', filters.published)
+  }
+
+  // Preload author
+  query.preload('author', (authorQuery) => {
+    authorQuery.select('name', 'email')
+  })
+
+  // Sort by most recent
+  query.orderBy('createdAt', 'desc')
+
+  // Paginate
+  const page = filters.page || 1
+  const perPage = filters.perPage || 10
+
+  return await query.paginate(page, perPage)
+}
+
+// Usage
+const searchResults = await searchPosts({
+  query: 'mongodb',
+  tags: ['tutorial'],
+  published: true,
+  page: 1,
+  perPage: 20
+})
+
+console.log('Found posts:', searchResults.data.length)
+console.log('Total posts:', searchResults.meta.total)
+```
+
+## Next Steps
+
+- **[Advanced Queries](/examples/advanced-queries)** - Complex query patterns and optimization
+- **[Embedded Documents](/examples/embedded-documents)** - Working with nested data structures
+- **[Transactions](/examples/transactions)** - Managing data consistency
+- **[Query Builder Guide](/docs/query-builder)** - Complete query building reference

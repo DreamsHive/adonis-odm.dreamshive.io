@@ -1,0 +1,209 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap");
+
+/* Custom CSS Variables for Theme */
+:root {
+  --tw-prose-body: 64 74 139;
+  --tw-prose-headings: 15 23 42;
+  --tw-prose-lead: 100 116 139;
+  --tw-prose-links: 14 165 233;
+  --tw-prose-bold: 15 23 42;
+  --tw-prose-counters: 100 116 139;
+  --tw-prose-bullets: 203 213 225;
+  --tw-prose-hr: 226 232 240;
+  --tw-prose-quotes: 100 116 139;
+  --tw-prose-quote-borders: 226 232 240;
+  --tw-prose-captions: 100 116 139;
+  --tw-prose-kbd: 15 23 42;
+  --tw-prose-kbd-shadows: 15 23 42;
+  --tw-prose-code: 15 23 42;
+  --tw-prose-pre-code: 226 232 240;
+  --tw-prose-pre-bg: 30 41 59;
+  --tw-prose-th-borders: 203 213 225;
+  --tw-prose-td-borders: 226 232 240;
+}
+
+.dark {
+  --tw-prose-body: 203 213 225;
+  --tw-prose-headings: 248 250 252;
+  --tw-prose-lead: 148 163 184;
+  --tw-prose-links: 56 189 248;
+  --tw-prose-bold: 248 250 252;
+  --tw-prose-counters: 148 163 184;
+  --tw-prose-bullets: 71 85 105;
+  --tw-prose-hr: 51 65 85;
+  --tw-prose-quotes: 148 163 184;
+  --tw-prose-quote-borders: 51 65 85;
+  --tw-prose-captions: 148 163 184;
+  --tw-prose-kbd: 248 250 252;
+  --tw-prose-kbd-shadows: 2 6 23;
+  --tw-prose-code: 248 250 252;
+  --tw-prose-pre-code: 226 232 240;
+  --tw-prose-pre-bg: 15 23 42;
+  --tw-prose-th-borders: 51 65 85;
+  --tw-prose-td-borders: 51 65 85;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184 / 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 163 184 / 0.7);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(71 85 105 / 0.5);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(71 85 105 / 0.7);
+}
+
+/* Code block styling */
+pre {
+  position: relative;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(226 232 240);
+  background: rgb(248 250 252);
+}
+
+.dark pre {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42);
+}
+
+pre code {
+  display: block;
+  padding: 1rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgb(30 41 59);
+}
+
+.dark pre code {
+  color: rgb(226 232 240);
+}
+
+/* Inline code styling */
+:not(pre) > code {
+  background: rgb(241 245 249);
+  color: rgb(30 41 59);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-weight: 600;
+}
+
+.dark :not(pre) > code {
+  background: rgb(30 41 59);
+  color: rgb(226 232 240);
+}
+
+/* Navigation active state */
+.nav-link-active {
+  @apply bg-primary-50 text-primary-700 border-r-2 border-primary-500;
+}
+
+.dark .nav-link-active {
+  @apply bg-primary-900/20 text-primary-300 border-primary-400;
+}
+
+/* Smooth transitions */
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+/* Focus styles */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+}
+
+.dark .focus-ring {
+  @apply focus:ring-offset-gray-900;
+}
+
+/* Table of contents */
+.toc {
+  @apply space-y-1;
+}
+
+.toc a {
+  @apply block py-1 px-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50;
+}
+
+.dark .toc a {
+  @apply text-gray-400 hover:text-gray-100 hover:bg-gray-800;
+}
+
+.toc a.active {
+  @apply text-primary-600 bg-primary-50;
+}
+
+.dark .toc a.active {
+  @apply text-primary-400 bg-primary-900/20;
+}
+
+/* Search styles */
+.search-highlight {
+  @apply bg-yellow-200 text-yellow-900;
+}
+
+.dark .search-highlight {
+  @apply bg-yellow-900/30 text-yellow-200;
+}
+
+/* Mobile menu animation */
+.mobile-menu-enter {
+  opacity: 0;
+  transform: translateX(-100%);
+}
+
+.mobile-menu-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.mobile-menu-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.mobile-menu-exit-active {
+  opacity: 0;
+  transform: translateX(-100%);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-break-inside-avoid {
+    break-inside: avoid;
+  }
+
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}

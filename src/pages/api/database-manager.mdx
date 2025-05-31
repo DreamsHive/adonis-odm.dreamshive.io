@@ -1,0 +1,615 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Database Manager API
+description: Complete API reference for the Database Manager in Adonis ODM
+---
+
+# Database Manager API Reference
+
+The Database Manager is the central component for managing MongoDB connections, transactions, and database operations in Adonis ODM. It provides methods for connection management, transaction handling, and raw database access.
+
+## Class Definition
+
+```typescript
+class DatabaseManager {
+  // Connection management
+  connection(name?: string): Connection
+  closeAll(): Promise<void>
+  
+  // Transaction management
+  transaction(callback?: TransactionCallback, options?: TransactionOptions): Promise<any>
+  transaction(options?: TransactionOptions): Promise<TransactionClient>
+  
+  // Raw database access
+  rawQuery(query: any, options?: QueryOptions): Promise<any>
+  rawAggregate(pipeline: any[], options?: AggregateOptions): Promise<any[]>
+  
+  // Health and monitoring
+  healthCheck(): Promise<HealthCheckResult>
+  getStats(): ConnectionStats
+}
+```
+
+## Connection Management
+
+### `connection(name?)`
+
+Get a database connection by name.
+
+```typescript
+connection(name?: string): Connection
+```
+
+**Parameters:**
+- `name` - Connection name (uses default if not provided)
+
+**Returns:** `Connection` instance
+
+**Example:**
+```typescript
+import Database from '@ioc:Adonis/Lucid/Database'
+
+// Get default connection
+const defaultConnection = Database.connection()
+
+// Get named connection
+const analyticsConnection = Database.connection('analytics')
+const logsConnection = Database.connection('logs')
+
+// Use connection for queries
+const users = await defaultConnection
+  .collection('users')
+  .find({ status: 'active' })
+  .toArray()
+```
+
+### `closeAll()`
+
+Close all database connections.
+
+```typescript
+closeAll(): Promise<void>
+```
+
+**Example:**
+```typescript
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Closing database connections...')
+  await Database.closeAll()
+  process.exit(0)
+})
+```
+
+## Transaction Management
+
+### `transaction(callback, options?)`
+
+Execute operations within a transaction using a callback.
+
+```typescript
+transaction<T>(
+  callback: (trx: TransactionClient) => Promise<T>,
+  options?: TransactionOptions
+): Promise<T>
+```
+
+**Parameters:**
+- `callback` - Function to execute within transaction
+- `options` - Transaction options
+
+**Returns:** Promise resolving to callback result
+
+**Example:**
+```typescript
+const result = await Database.transaction(async (trx) => {
+  const user = await User.create({
+    name: 'John Doe',
+    email: 'john@example.com'
+  }, { client: trx })
+
+  const profile = await UserProfile.create({
+    userId: user._id,
+    bio: 'Software developer'
+  }, { client: trx })
+
+  return { user, profile }
+})
+```
+
+### `transaction(options?)`
+
+Create a transaction client for manual management.
+
+```typescript
+transaction(options?: TransactionOptions): Promise<TransactionClient>
+```
+
+**Returns:** Promise resolving to `TransactionClient`
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+
+try {
+  const user = await User.create(userData, { client: trx })
+  const profile = await UserProfile.create(profileData, { client: trx })
+  
+  await trx.commit()
+} catch (error) {
+  await trx.rollback()
+  throw error
+}
+```
+
+## Transaction Options
+
+### `TransactionOptions`
+
+Configuration options for transactions.
+
+```typescript
+interface TransactionOptions {
+  connection?: string
+  readConcern?: {
+    level: 'local' | 'available' | 'majority' | 'linearizable' | 'snapshot'
+  }
+  writeConcern?: {
+    w?: number | 'majority'
+    j?: boolean
+    wtimeout?: number
+  }
+  maxCommitTimeMS?: number
+  defaultTransactionOptions?: {
+    readConcern?: ReadConcern
+    writeConcern?: WriteConcern
+    readPreference?: ReadPreference
+  }
+}
+```
+
+**Example:**
+```typescript
+const trx = await Database.transaction({
+  connection: 'primary',
+  readConcern: { level: 'majority' },
+  writeConcern: { w: 'majority', j: true },
+  maxCommitTimeMS: 30000
+})
+```
+
+## Raw Database Operations
+
+### `rawQuery(query, options?)`
+
+Execute a raw MongoDB query.
+
+```typescript
+rawQuery(query: any, options?: QueryOptions): Promise<any>
+```
+
+**Parameters:**
+- `query` - MongoDB query object
+- `options` - Query options
+
+**Example:**
+```typescript
+// Raw find query
+const users = await Database.rawQuery({
+  collection: 'users',
+  operation: 'find',
+  query: { status: 'active' },
+  options: { limit: 10 }
+})
+
+// Raw update query
+const result = await Database.rawQuery({
+  collection: 'users',
+  operation: 'updateMany',
+  filter: { status: 'pending' },
+  update: { $set: { status: 'active' } }
+})
+
+// Raw delete query
+const deleteResult = await Database.rawQuery({
+  collection: 'users',
+  operation: 'deleteMany',
+  filter: { deletedAt: { $lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }
+})
+```
+
+### `rawAggregate(pipeline, options?)`
+
+Execute a raw aggregation pipeline.
+
+```typescript
+rawAggregate(pipeline: any[], options?: AggregateOptions): Promise<any[]>
+```
+
+**Example:**
+```typescript
+// User statistics aggregation
+const userStats = await Database.rawAggregate([
+  { $match: { status: 'active' } },
+  {
+    $group: {
+      _id: '$role',
+      count: { $sum: 1 },
+      avgAge: { $avg: '$age' },
+      totalPosts: { $sum: '$postCount' }
+    }
+  },
+  { $sort: { count: -1 } }
+], {
+  collection: 'users',
+  allowDiskUse: true
+})
+
+// Complex reporting aggregation
+const monthlyReport = await Database.rawAggregate([
+  {
+    $match: {
+      createdAt: {
+        $gte: new Date('2024-01-01'),
+        $lt: new Date('2024-02-01')
+      }
+    }
+  },
+  {
+    $group: {
+      _id: {
+        year: { $year: '$createdAt' },
+        month: { $month: '$createdAt' },
+        day: { $dayOfMonth: '$createdAt' }
+      },
+      count: { $sum: 1 },
+      revenue: { $sum: '$total' }
+    }
+  },
+  { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+], {
+  collection: 'orders'
+})
+```
+
+## Health Monitoring
+
+### `healthCheck()`
+
+Perform a comprehensive health check of all connections.
+
+```typescript
+healthCheck(): Promise<HealthCheckResult>
+```
+
+**Returns:**
+```typescript
+interface HealthCheckResult {
+  status: 'healthy' | 'unhealthy'
+  connections: {
+    [connectionName: string]: {
+      status: 'healthy' | 'unhealthy'
+      responseTime?: number
+      error?: string
+      pool?: {
+        size: number
+        available: number
+        borrowed: number
+      }
+    }
+  }
+  timestamp: Date
+}
+```
+
+**Example:**
+```typescript
+const health = await Database.healthCheck()
+
+console.log('Overall status:', health.status)
+
+for (const [name, connection] of Object.entries(health.connections)) {
+  console.log(`${name}: ${connection.status}`)
+  if (connection.responseTime) {
+    console.log(`  Response time: ${connection.responseTime}ms`)
+  }
+  if (connection.pool) {
+    console.log(`  Pool: ${connection.pool.borrowed}/${connection.pool.size}`)
+  }
+}
+```
+
+### `getStats()`
+
+Get connection statistics for all connections.
+
+```typescript
+getStats(): ConnectionStats
+```
+
+**Returns:**
+```typescript
+interface ConnectionStats {
+  [connectionName: string]: {
+    pool: {
+      size: number
+      available: number
+      borrowed: number
+      pending: number
+      invalid: number
+    }
+    queries: {
+      total: number
+      active: number
+      failed: number
+    }
+    uptime: number
+  }
+}
+```
+
+**Example:**
+```typescript
+const stats = Database.getStats()
+
+for (const [name, stat] of Object.entries(stats)) {
+  console.log(`Connection: ${name}`)
+  console.log(`  Pool size: ${stat.pool.size}`)
+  console.log(`  Available: ${stat.pool.available}`)
+  console.log(`  Active queries: ${stat.queries.active}`)
+  console.log(`  Uptime: ${stat.uptime}s`)
+}
+```
+
+## Connection Class
+
+### Connection Methods
+
+```typescript
+class Connection {
+  // Collection access
+  collection(name: string): Collection
+  
+  // Database operations
+  ping(): Promise<any>
+  stats(): Promise<any>
+  listCollections(): Promise<string[]>
+  
+  // Index management
+  createIndex(collection: string, index: any, options?: any): Promise<string>
+  dropIndex(collection: string, index: string): Promise<any>
+  listIndexes(collection: string): Promise<any[]>
+  
+  // Connection management
+  connect(): Promise<void>
+  disconnect(): Promise<void>
+  isConnected(): boolean
+}
+```
+
+### Collection Operations
+
+```typescript
+// Get collection reference
+const usersCollection = Database.connection().collection('users')
+
+// Direct collection operations
+const user = await usersCollection.findOne({ email: 'john@example.com' })
+
+const users = await usersCollection
+  .find({ status: 'active' })
+  .sort({ createdAt: -1 })
+  .limit(10)
+  .toArray()
+
+// Insert operations
+const insertResult = await usersCollection.insertOne({
+  name: 'Jane Doe',
+  email: 'jane@example.com',
+  createdAt: new Date()
+})
+
+// Update operations
+const updateResult = await usersCollection.updateMany(
+  { status: 'pending' },
+  { $set: { status: 'active', updatedAt: new Date() } }
+)
+
+// Delete operations
+const deleteResult = await usersCollection.deleteMany({
+  deletedAt: { $lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+})
+```
+
+## Index Management
+
+### Creating Indexes
+
+```typescript
+// Create single field index
+await Database.connection().createIndex('users', { email: 1 }, {
+  unique: true,
+  name: 'email_unique'
+})
+
+// Create compound index
+await Database.connection().createIndex('users', {
+  status: 1,
+  createdAt: -1
+}, {
+  name: 'status_created_compound'
+})
+
+// Create text index
+await Database.connection().createIndex('posts', {
+  title: 'text',
+  content: 'text'
+}, {
+  name: 'posts_text_search'
+})
+
+// Create geospatial index
+await Database.connection().createIndex('locations', {
+  coordinates: '2dsphere'
+}, {
+  name: 'location_geo'
+})
+```
+
+### Managing Indexes
+
+```typescript
+// List all indexes for a collection
+const indexes = await Database.connection().listIndexes('users')
+console.log('Indexes:', indexes)
+
+// Drop an index
+await Database.connection().dropIndex('users', 'email_unique')
+
+// Get index statistics
+const stats = await Database.connection()
+  .collection('users')
+  .indexStats()
+  .toArray()
+```
+
+## Error Handling
+
+### Connection Errors
+
+```typescript
+try {
+  const connection = Database.connection('invalid')
+  await connection.ping()
+} catch (error) {
+  if (error.name === 'MongoNetworkError') {
+    console.error('Network connection failed')
+  } else if (error.name === 'MongoServerSelectionError') {
+    console.error('Server selection failed')
+  } else {
+    console.error('Database error:', error.message)
+  }
+}
+```
+
+### Transaction Errors
+
+```typescript
+try {
+  await Database.transaction(async (trx) => {
+    // Transaction operations
+  })
+} catch (error) {
+  if (error.errorLabels?.includes('TransientTransactionError')) {
+    console.log('Transaction can be retried')
+  } else if (error.errorLabels?.includes('UnknownTransactionCommitResult')) {
+    console.log('Transaction commit result unknown')
+  } else {
+    console.error('Transaction failed:', error)
+  }
+}
+```
+
+## Performance Monitoring
+
+### Query Performance
+
+```typescript
+// Monitor slow queries
+Database.on('query', (query) => {
+  if (query.duration > 1000) { // Queries taking more than 1 second
+    console.warn('Slow query detected:', {
+      collection: query.collection,
+      operation: query.operation,
+      duration: query.duration,
+      filter: query.filter
+    })
+  }
+})
+
+// Connection pool monitoring
+Database.on('pool:create', (connection) => {
+  console.log('New connection created:', connection.id)
+})
+
+Database.on('pool:destroy', (connection) => {
+  console.log('Connection destroyed:', connection.id)
+})
+```
+
+### Custom Metrics
+
+```typescript
+class DatabaseMetrics {
+  private metrics = new Map()
+
+  public recordQuery(operation: string, duration: number) {
+    const key = `query:${operation}`
+    const current = this.metrics.get(key) || { count: 0, totalTime: 0 }
+    
+    this.metrics.set(key, {
+      count: current.count + 1,
+      totalTime: current.totalTime + duration,
+      avgTime: (current.totalTime + duration) / (current.count + 1)
+    })
+  }
+
+  public getMetrics() {
+    return Object.fromEntries(this.metrics)
+  }
+}
+
+const metrics = new DatabaseMetrics()
+
+// Hook into database operations
+Database.on('query', (query) => {
+  metrics.recordQuery(query.operation, query.duration)
+})
+```
+
+## Testing
+
+### Database Testing Setup
+
+```typescript
+import { test } from '@japa/runner'
+import Database from '@ioc:Adonis/Lucid/Database'
+
+test.group('Database operations', (group) => {
+  group.each.setup(async () => {
+    // Setup test database
+    await Database.connection('test').collection('users').deleteMany({})
+  })
+
+  group.each.teardown(async () => {
+    // Cleanup after each test
+    await Database.connection('test').collection('users').deleteMany({})
+  })
+
+  test('should perform raw query', async ({ assert }) => {
+    const result = await Database.rawQuery({
+      collection: 'users',
+      operation: 'insertOne',
+      document: { name: 'Test User', email: 'test@example.com' }
+    })
+
+    assert.exists(result.insertedId)
+  })
+
+  test('should handle transactions', async ({ assert }) => {
+    const result = await Database.transaction(async (trx) => {
+      // Transaction operations
+      return { success: true }
+    })
+
+    assert.isTrue(result.success)
+  })
+})
+```
+
+## Next Steps
+
+- **[Transaction Client API](/api/transaction-client)** - Transaction management reference
+- **[BaseModel API](/api/base-model)** - Model methods and properties
+- **[Connection Management](/docs/connections)** - Connection configuration and management
+- **[Database Transactions](/docs/transactions)** - Transaction usage patterns

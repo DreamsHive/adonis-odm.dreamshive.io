@@ -1,0 +1,725 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Performance Optimization
+description: Learn how to optimize performance in Adonis ODM with indexing, connection pooling, query optimization, and caching strategies
+---
+
+# Performance Optimization
+
+This guide covers performance optimization techniques for Adonis ODM, including database indexing, connection pooling, query optimization, and caching strategies to build high-performance MongoDB applications.
+
+## Database Indexing
+
+### Basic Indexes
+
+```typescript
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare email: string
+
+  @column()
+  declare status: string
+
+  @column()
+  declare age: number
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+
+  // Define indexes for better query performance
+  static get indexes() {
+    return [
+      // Single field indexes
+      { email: 1 }, // Ascending index on email
+      { status: 1 }, // Index on status field
+      { createdAt: -1 }, // Descending index on creation date
+      
+      // Unique indexes
+      { email: 1, unique: true }, // Unique email constraint
+      
+      // Compound indexes
+      { status: 1, createdAt: -1 }, // Compound index for status + date queries
+      { age: 1, status: 1 }, // Age and status combination
+      
+      // Sparse indexes (only index documents that have the field)
+      { phoneNumber: 1, sparse: true },
+      
+      // Partial indexes (only index documents matching a condition)
+      { 
+        email: 1, 
+        partialFilterExpression: { status: 'active' }
+      }
+    ]
+  }
+}
+```
+
+### Text Search Indexes
+
+```typescript
+export default class Post extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare title: string
+
+  @column()
+  declare content: string
+
+  @column()
+  declare tags: string[]
+
+  static get indexes() {
+    return [
+      // Text search index
+      {
+        title: 'text',
+        content: 'text',
+        'tags': 'text'
+      },
+      
+      // Text index with weights
+      {
+        title: 'text',
+        content: 'text'
+      },
+      {
+        weights: {
+          title: 10,
+          content: 5
+        },
+        name: 'post_text_search'
+      }
+    ]
+  }
+}
+
+// Optimized text search queries
+const posts = await Post.query()
+  .whereText('mongodb tutorial', {
+    caseSensitive: false,
+    language: 'english'
+  })
+  .orderBy('score', { $meta: 'textScore' })
+  .limit(20)
+  .all()
+```
+
+### Geospatial Indexes
+
+```typescript
+export default class Location extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string
+
+  @column()
+  declare name: string
+
+  @column()
+  declare coordinates: {
+    type: 'Point'
+    coordinates: [number, number] // [longitude, latitude]
+  }
+
+  static get indexes() {
+    return [
+      // 2dsphere index for geospatial queries
+      { coordinates: '2dsphere' },
+      
+      // Compound geospatial index
+      { coordinates: '2dsphere', category: 1 }
+    ]
+  }
+}
+
+// Optimized geospatial queries
+const nearbyLocations = await Location.query()
+  .whereNear('coordinates', {
+    geometry: { type: 'Point', coordinates: [-73.9857, 40.7484] },
+    maxDistance: 1000 // meters
+  })
+  .limit(50)
+  .all()
+```
+
+## Connection Pooling
+
+### Optimal Pool Configuration
+
+```typescript
+// config/odm.ts
+import env from '#start/env'
+import { defineConfig } from 'adonis-odm'
+
+const odmConfig = defineConfig({
+  connection: 'mongodb',
+  
+  connections: {
+    mongodb: {
+      client: 'mongodb',
+      connection: {
+        url: env.get('MONGO_URI'),
+        options: {
+          // Connection pool settings
+          maxPoolSize: env.get('MONGO_MAX_POOL_SIZE', 20), // Maximum connections
+          minPoolSize: env.get('MONGO_MIN_POOL_SIZE', 5),  // Minimum connections
+          maxIdleTimeMS: env.get('MONGO_MAX_IDLE_TIME_MS', 30000), // 30 seconds
+          
+          // Connection timeouts
+          serverSelectionTimeoutMS: env.get('MONGO_SERVER_SELECTION_TIMEOUT_MS', 5000),
+          socketTimeoutMS: env.get('MONGO_SOCKET_TIMEOUT_MS', 45000),
+          connectTimeoutMS: env.get('MONGO_CONNECT_TIMEOUT_MS', 10000),
+          
+          // Read/Write preferences for performance
+          readPreference: 'secondaryPreferred', // Read from secondaries when possible
+          readConcern: { level: 'majority' },
+          writeConcern: { w: 'majority', j: true },
+          
+          // Compression for network efficiency
+          compressors: ['snappy', 'zlib'],
+          
+          // Monitoring
+          monitorCommands: true,
+          heartbeatFrequencyMS: 10000
+        }
+      }
+    }
+  }
+})
+
+export default odmConfig
+```
+
+### Connection Monitoring
+
+```typescript
+import Database from '@ioc:Adonis/Lucid/Database'
+
+class ConnectionMonitor {
+  public startMonitoring() {
+    setInterval(() => {
+      this.logConnectionStats()
+    }, 30000) // Every 30 seconds
+  }
+
+  private logConnectionStats() {
+    const connection = Database.connection()
+    const stats = connection.pool?.stats()
+
+    if (stats) {
+      console.log('Connection Pool Stats:', {
+        size: stats.size,
+        available: stats.available,
+        borrowed: stats.borrowed,
+        pending: stats.pending,
+        invalid: stats.invalid
+      })
+
+      // Alert if pool is exhausted
+      if (stats.available === 0 && stats.pending > 0) {
+        console.warn('⚠️ Connection pool exhausted!')
+      }
+
+      // Alert if too many invalid connections
+      if (stats.invalid > stats.size * 0.1) {
+        console.warn('⚠️ High number of invalid connections')
+      }
+    }
+  }
+}
+
+// Start monitoring in your application
+const monitor = new ConnectionMonitor()
+monitor.startMonitoring()
+```
+
+## Query Optimization
+
+### Efficient Field Selection
+
+```typescript
+// Good: Select only needed fields
+const users = await User.query()
+  .select('name', 'email', 'status')
+  .where('status', 'active')
+  .all()
+
+// Avoid: Selecting all fields when not needed
+const users = await User.query()
+  .where('status', 'active')
+  .all() // Fetches all fields including large ones
+```
+
+### Optimized Filtering
+
+```typescript
+// Good: Use indexed fields in where clauses
+const users = await User.query()
+  .where('email', 'john@example.com') // email should be indexed
+  .where('status', 'active') // status should be indexed
+  .first()
+
+// Good: Use compound indexes effectively
+const users = await User.query()
+  .where('status', 'active')
+  .where('createdAt', '>=', DateTime.now().minus({ days: 30 }))
+  .orderBy('createdAt', 'desc')
+  .all()
+// Requires compound index: { status: 1, createdAt: -1 }
+```
+
+### Pagination Optimization
+
+```typescript
+// Good: Cursor-based pagination for large datasets
+async function getCursorPaginatedUsers(cursor?: string, limit: number = 20) {
+  const query = User.query()
+    .where('status', 'active')
+    .orderBy('_id', 'desc')
+    .limit(limit + 1)
+
+  if (cursor) {
+    query.where('_id', '<', cursor)
+  }
+
+  const users = await query.all()
+  const hasNext = users.length > limit
+
+  if (hasNext) {
+    users.pop()
+  }
+
+  return {
+    data: users,
+    hasNext,
+    nextCursor: hasNext ? users[users.length - 1]._id : null
+  }
+}
+
+// Avoid: Offset-based pagination for large datasets
+const users = await User.query()
+  .where('status', 'active')
+  .skip(10000) // Slow for large offsets
+  .limit(20)
+  .all()
+```
+
+### Aggregation Optimization
+
+```typescript
+// Good: Use aggregation pipeline for complex operations
+const userStats = await User.query()
+  .aggregate([
+    { $match: { status: 'active' } },
+    {
+      $group: {
+        _id: '$department',
+        count: { $sum: 1 },
+        avgAge: { $avg: '$age' }
+      }
+    },
+    { $sort: { count: -1 } }
+  ])
+
+// Good: Use allowDiskUse for large aggregations
+const largeAggregation = await User.query()
+  .aggregate([
+    // Complex pipeline
+  ], { allowDiskUse: true })
+```
+
+## Bulk Operations
+
+### Efficient Bulk Inserts
+
+```typescript
+// Good: Use createMany for bulk inserts
+const users = await User.createMany([
+  { name: 'User 1', email: 'user1@example.com' },
+  { name: 'User 2', email: 'user2@example.com' },
+  // ... more users
+])
+
+// Good: Use ordered: false for better performance when order doesn't matter
+const users = await User.createMany(userData, { 
+  ordered: false // Allows parallel processing
+})
+```
+
+### Bulk Updates and Deletes
+
+```typescript
+// Good: Bulk update multiple records
+const updateCount = await User.query()
+  .where('lastLoginAt', '<', DateTime.now().minus({ months: 6 }))
+  .update({ status: 'inactive' })
+
+// Good: Use MongoDB's bulkWrite for complex operations
+const collection = Database.connection().collection('users')
+const bulkOps = [
+  {
+    updateOne: {
+      filter: { email: 'user1@example.com' },
+      update: { $set: { status: 'active' } },
+      upsert: true
+    }
+  },
+  {
+    updateMany: {
+      filter: { department: 'IT' },
+      update: { $inc: { salary: 1000 } }
+    }
+  },
+  {
+    deleteMany: {
+      filter: { status: 'deleted', deletedAt: { $lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }
+    }
+  }
+]
+
+const result = await collection.bulkWrite(bulkOps, { ordered: false })
+```
+
+## Caching Strategies
+
+### Model-Level Caching
+
+```typescript
+import Redis from '@ioc:Adonis/Addons/Redis'
+
+export default class User extends BaseModel {
+  // Cache frequently accessed users
+  public static async findCached(id: string): Promise<User | null> {
+    const cacheKey = `user:${id}`
+    
+    // Try to get from cache first
+    const cached = await Redis.get(cacheKey)
+    if (cached) {
+      return this.newFromBuilder(JSON.parse(cached))
+    }
+
+    // Fetch from database
+    const user = await this.find(id)
+    if (user) {
+      // Cache for 5 minutes
+      await Redis.setex(cacheKey, 300, JSON.stringify(user.toJSON()))
+    }
+
+    return user
+  }
+
+  // Invalidate cache on save
+  public async save() {
+    const result = await super.save()
+    
+    // Invalidate cache
+    const cacheKey = `user:${this._id}`
+    await Redis.del(cacheKey)
+    
+    return result
+  }
+}
+```
+
+### Query Result Caching
+
+```typescript
+class QueryCache {
+  private static generateKey(query: any): string {
+    return `query:${Buffer.from(JSON.stringify(query)).toString('base64')}`
+  }
+
+  public static async remember<T>(
+    query: () => Promise<T>,
+    ttl: number = 300,
+    key?: string
+  ): Promise<T> {
+    const cacheKey = key || this.generateKey(query.toString())
+    
+    const cached = await Redis.get(cacheKey)
+    if (cached) {
+      return JSON.parse(cached)
+    }
+
+    const result = await query()
+    await Redis.setex(cacheKey, ttl, JSON.stringify(result))
+    
+    return result
+  }
+}
+
+// Usage
+const activeUsers = await QueryCache.remember(
+  () => User.query().where('status', 'active').all(),
+  300, // 5 minutes
+  'active-users'
+)
+```
+
+### Application-Level Caching
+
+```typescript
+class AppCache {
+  private static cache = new Map<string, { data: any, expires: number }>()
+
+  public static set(key: string, value: any, ttlSeconds: number = 300) {
+    this.cache.set(key, {
+      data: value,
+      expires: Date.now() + (ttlSeconds * 1000)
+    })
+  }
+
+  public static get(key: string): any | null {
+    const item = this.cache.get(key)
+    
+    if (!item) return null
+    
+    if (Date.now() > item.expires) {
+      this.cache.delete(key)
+      return null
+    }
+    
+    return item.data
+  }
+
+  public static async remember<T>(
+    key: string,
+    factory: () => Promise<T>,
+    ttlSeconds: number = 300
+  ): Promise<T> {
+    let value = this.get(key)
+    
+    if (value === null) {
+      value = await factory()
+      this.set(key, value, ttlSeconds)
+    }
+    
+    return value
+  }
+
+  // Cleanup expired entries periodically
+  public static cleanup() {
+    const now = Date.now()
+    for (const [key, item] of this.cache.entries()) {
+      if (now > item.expires) {
+        this.cache.delete(key)
+      }
+    }
+  }
+}
+
+// Start cleanup interval
+setInterval(() => AppCache.cleanup(), 60000) // Every minute
+```
+
+## Memory Management
+
+### Streaming Large Datasets
+
+```typescript
+// Good: Use streams for processing large datasets
+async function processLargeDataset() {
+  const stream = User.query()
+    .where('status', 'active')
+    .stream()
+
+  let processedCount = 0
+
+  for await (const user of stream) {
+    await processUser(user)
+    processedCount++
+
+    // Log progress
+    if (processedCount % 1000 === 0) {
+      console.log(`Processed ${processedCount} users`)
+    }
+  }
+
+  console.log(`Total processed: ${processedCount} users`)
+}
+```
+
+### Batch Processing
+
+```typescript
+// Good: Process data in batches to control memory usage
+async function processBatches() {
+  let cursor = null
+  const batchSize = 1000
+  let totalProcessed = 0
+
+  do {
+    const query = User.query()
+      .where('status', 'active')
+      .orderBy('_id')
+      .limit(batchSize)
+
+    if (cursor) {
+      query.where('_id', '>', cursor)
+    }
+
+    const users = await query.all()
+
+    if (users.length > 0) {
+      await processBatch(users)
+      cursor = users[users.length - 1]._id
+      totalProcessed += users.length
+
+      console.log(`Processed batch: ${totalProcessed} total users`)
+    }
+
+    // Break if we got fewer results than batch size
+    if (users.length < batchSize) {
+      break
+    }
+  } while (true)
+}
+
+async function processBatch(users: User[]) {
+  // Process users in parallel with concurrency limit
+  const concurrency = 10
+  const chunks = []
+  
+  for (let i = 0; i < users.length; i += concurrency) {
+    chunks.push(users.slice(i, i + concurrency))
+  }
+
+  for (const chunk of chunks) {
+    await Promise.all(chunk.map(user => processUser(user)))
+  }
+}
+```
+
+## Performance Monitoring
+
+### Query Performance Tracking
+
+```typescript
+class QueryPerformanceMonitor {
+  private static slowQueries: Array<{
+    query: string
+    duration: number
+    timestamp: Date
+  }> = []
+
+  public static trackQuery<T>(
+    queryName: string,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const start = Date.now()
+    
+    return operation().finally(() => {
+      const duration = Date.now() - start
+      
+      // Log slow queries (> 1 second)
+      if (duration > 1000) {
+        console.warn(`Slow query detected: ${queryName} took ${duration}ms`)
+        
+        this.slowQueries.push({
+          query: queryName,
+          duration,
+          timestamp: new Date()
+        })
+
+        // Keep only last 100 slow queries
+        if (this.slowQueries.length > 100) {
+          this.slowQueries.shift()
+        }
+      }
+    })
+  }
+
+  public static getSlowQueries() {
+    return this.slowQueries
+  }
+}
+
+// Usage
+const users = await QueryPerformanceMonitor.trackQuery(
+  'User.findActiveUsers',
+  () => User.query().where('status', 'active').all()
+)
+```
+
+### Memory Usage Monitoring
+
+```typescript
+class MemoryMonitor {
+  public static logMemoryUsage(label: string = '') {
+    const usage = process.memoryUsage()
+    
+    console.log(`Memory Usage ${label}:`, {
+      rss: `${Math.round(usage.rss / 1024 / 1024)} MB`,
+      heapTotal: `${Math.round(usage.heapTotal / 1024 / 1024)} MB`,
+      heapUsed: `${Math.round(usage.heapUsed / 1024 / 1024)} MB`,
+      external: `${Math.round(usage.external / 1024 / 1024)} MB`
+    })
+  }
+
+  public static async measureOperation<T>(
+    operation: () => Promise<T>,
+    label: string
+  ): Promise<T> {
+    this.logMemoryUsage(`Before ${label}`)
+    
+    const result = await operation()
+    
+    // Force garbage collection if available
+    if (global.gc) {
+      global.gc()
+    }
+    
+    this.logMemoryUsage(`After ${label}`)
+    
+    return result
+  }
+}
+
+// Usage
+const result = await MemoryMonitor.measureOperation(
+  () => processLargeDataset(),
+  'Large Dataset Processing'
+)
+```
+
+## Best Practices Summary
+
+### 1. Database Design
+- Create appropriate indexes for your query patterns
+- Use compound indexes for multi-field queries
+- Consider partial and sparse indexes for optional fields
+- Use text indexes for search functionality
+
+### 2. Query Optimization
+- Select only needed fields
+- Use indexed fields in where clauses
+- Prefer cursor-based pagination for large datasets
+- Use aggregation pipelines for complex operations
+
+### 3. Connection Management
+- Configure connection pools appropriately
+- Monitor connection pool health
+- Use read preferences to distribute load
+
+### 4. Caching
+- Cache frequently accessed data
+- Use appropriate TTL values
+- Invalidate cache when data changes
+- Consider different caching layers
+
+### 5. Memory Management
+- Use streaming for large datasets
+- Process data in batches
+- Monitor memory usage
+- Clean up resources properly
+
+## Next Steps
+
+- **[Error Handling](/docs/error-handling)** - Handle performance-related errors
+- **[Testing](/docs/testing)** - Test performance optimizations
+- **[Connection Management](/docs/connections)** - Advanced connection configuration
+- **[Query Builder](/docs/query-builder)** - Optimize your queries

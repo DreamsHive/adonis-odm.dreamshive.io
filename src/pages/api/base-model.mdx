@@ -1,0 +1,584 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: BaseModel API
+description: Complete API reference for the BaseModel class in Adonis ODM
+---
+
+# BaseModel API Reference
+
+The `BaseModel` class is the foundation of all models in Adonis ODM. It provides the core functionality for interacting with MongoDB documents.
+
+## Class Definition
+
+```typescript
+abstract class BaseModel {
+  // Static properties
+  static table: string
+  static connection: string
+  static primaryKey: string
+
+  // Instance properties
+  $attributes: Record<string, any>
+  $original: Record<string, any>
+  $dirty: Record<string, any>
+  $isLocal: boolean
+  $isPersisted: boolean
+  $isDeleted: boolean
+}
+```
+
+## Static Properties
+
+### `table`
+
+The MongoDB collection name for the model.
+
+```typescript
+export default class User extends BaseModel {
+  static table = 'users'
+}
+```
+
+**Default:** Pluralized, snake_case version of the model name
+
+### `connection`
+
+The database connection to use for this model.
+
+```typescript
+export default class User extends BaseModel {
+  static connection = 'mongodb'
+}
+```
+
+**Default:** The default connection from config
+
+### `primaryKey`
+
+The primary key field name.
+
+```typescript
+export default class User extends BaseModel {
+  static primaryKey = '_id'
+}
+```
+
+**Default:** `'_id'`
+
+## Static Methods
+
+### `query(options?)`
+
+Create a new query builder instance.
+
+```typescript
+static query(options?: QueryOptions): ModelQueryBuilder<Model>
+```
+
+**Parameters:**
+- `options.client?` - Transaction client to use
+
+**Returns:** `ModelQueryBuilder<Model>`
+
+**Example:**
+```typescript
+const users = await User.query().where('isActive', true).all()
+```
+
+### `create(attributes, options?)`
+
+Create and save a new model instance.
+
+```typescript
+static async create<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  attributes: Partial<ModelAttributes<T>>,
+  options?: SaveOptions
+): Promise<T>
+```
+
+**Parameters:**
+- `attributes` - The model attributes
+- `options.client?` - Transaction client to use
+
+**Returns:** `Promise<Model>`
+
+**Example:**
+```typescript
+const user = await User.create({
+  name: 'John Doe',
+  email: 'john@example.com'
+})
+```
+
+### `createMany(attributesArray, options?)`
+
+Create multiple model instances.
+
+```typescript
+static async createMany<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  attributesArray: Partial<ModelAttributes<T>>[],
+  options?: SaveOptions
+): Promise<T[]>
+```
+
+**Example:**
+```typescript
+const users = await User.createMany([
+  { name: 'John', email: 'john@example.com' },
+  { name: 'Jane', email: 'jane@example.com' }
+])
+```
+
+### `find(id, options?)`
+
+Find a model by its primary key.
+
+```typescript
+static async find<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  id: any,
+  options?: QueryOptions
+): Promise<T | null>
+```
+
+**Example:**
+```typescript
+const user = await User.find('507f1f77bcf86cd799439011')
+```
+
+### `findOrFail(id, options?)`
+
+Find a model by its primary key or throw an exception.
+
+```typescript
+static async findOrFail<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  id: any,
+  options?: QueryOptions
+): Promise<T>
+```
+
+**Throws:** `ModelNotFoundException` if not found
+
+### `findBy(field, value, options?)`
+
+Find a model by a specific field.
+
+```typescript
+static async findBy<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  field: string,
+  value: any,
+  options?: QueryOptions
+): Promise<T | null>
+```
+
+**Example:**
+```typescript
+const user = await User.findBy('email', 'john@example.com')
+```
+
+### `findByOrFail(field, value, options?)`
+
+Find a model by a specific field or throw an exception.
+
+```typescript
+static async findByOrFail<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  field: string,
+  value: any,
+  options?: QueryOptions
+): Promise<T>
+```
+
+### `first(options?)`
+
+Get the first model from the collection.
+
+```typescript
+static async first<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  options?: QueryOptions
+): Promise<T | null>
+```
+
+### `firstOrFail(options?)`
+
+Get the first model from the collection or throw an exception.
+
+```typescript
+static async firstOrFail<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  options?: QueryOptions
+): Promise<T>
+```
+
+### `all(options?)`
+
+Get all models from the collection.
+
+```typescript
+static async all<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  options?: QueryOptions
+): Promise<T[]>
+```
+
+### `updateOrCreate(search, attributes, options?)`
+
+Update an existing model or create a new one.
+
+```typescript
+static async updateOrCreate<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  search: Partial<ModelAttributes<T>>,
+  attributes: Partial<ModelAttributes<T>>,
+  options?: SaveOptions
+): Promise<T>
+```
+
+**Example:**
+```typescript
+const user = await User.updateOrCreate(
+  { email: 'john@example.com' },
+  { name: 'John Doe', isActive: true }
+)
+```
+
+### `truncate(options?)`
+
+Remove all documents from the collection.
+
+```typescript
+static async truncate<T extends BaseModel>(
+  this: ModelConstructor<T>,
+  options?: QueryOptions
+): Promise<void>
+```
+
+## Instance Properties
+
+### `$attributes`
+
+The current model attributes.
+
+```typescript
+readonly $attributes: Record<string, any>
+```
+
+### `$original`
+
+The original model attributes (before changes).
+
+```typescript
+readonly $original: Record<string, any>
+```
+
+### `$dirty`
+
+The changed attributes since last save.
+
+```typescript
+readonly $dirty: Record<string, any>
+```
+
+### `$isLocal`
+
+Whether the model exists only in memory (not saved to database).
+
+```typescript
+readonly $isLocal: boolean
+```
+
+### `$isPersisted`
+
+Whether the model has been saved to the database.
+
+```typescript
+readonly $isPersisted: boolean
+```
+
+### `$isDeleted`
+
+Whether the model has been deleted.
+
+```typescript
+readonly $isDeleted: boolean
+```
+
+## Instance Methods
+
+### `save(options?)`
+
+Save the model to the database.
+
+```typescript
+async save(options?: SaveOptions): Promise<this>
+```
+
+**Parameters:**
+- `options.client?` - Transaction client to use
+
+**Example:**
+```typescript
+const user = new User()
+user.name = 'John Doe'
+user.email = 'john@example.com'
+await user.save()
+```
+
+### `delete(options?)`
+
+Delete the model from the database.
+
+```typescript
+async delete(options?: QueryOptions): Promise<void>
+```
+
+### `refresh(options?)`
+
+Reload the model from the database.
+
+```typescript
+async refresh(options?: QueryOptions): Promise<this>
+```
+
+### `fill(attributes)`
+
+Fill the model with attributes.
+
+```typescript
+fill(attributes: Partial<ModelAttributes<this>>): this
+```
+
+**Example:**
+```typescript
+const user = new User()
+user.fill({
+  name: 'John Doe',
+  email: 'john@example.com'
+})
+```
+
+### `merge(attributes)`
+
+Merge attributes into the model.
+
+```typescript
+merge(attributes: Partial<ModelAttributes<this>>): this
+```
+
+### `toJSON()`
+
+Convert the model to a plain JavaScript object.
+
+```typescript
+toJSON(): Record<string, any>
+```
+
+### `serialize(cherryPick?)`
+
+Serialize the model with optional field selection.
+
+```typescript
+serialize(cherryPick?: CherryPick): Record<string, any>
+```
+
+**Parameters:**
+- `cherryPick.fields.pick?` - Fields to include
+- `cherryPick.fields.omit?` - Fields to exclude
+
+**Example:**
+```typescript
+// Include only specific fields
+const json = user.serialize({
+  fields: {
+    pick: ['name', 'email']
+  }
+})
+
+// Exclude specific fields
+const json = user.serialize({
+  fields: {
+    omit: ['password']
+  }
+})
+```
+
+## Hooks
+
+Models support various lifecycle hooks:
+
+### `@beforeSave()`
+
+Called before saving (create or update).
+
+```typescript
+@beforeSave()
+static async hashPassword(user: User) {
+  if (user.$dirty.password) {
+    user.password = await Hash.make(user.password)
+  }
+}
+```
+
+### `@afterSave()`
+
+Called after saving (create or update).
+
+### `@beforeCreate()`
+
+Called before creating a new model.
+
+### `@afterCreate()`
+
+Called after creating a new model.
+
+### `@beforeUpdate()`
+
+Called before updating an existing model.
+
+### `@afterUpdate()`
+
+Called after updating an existing model.
+
+### `@beforeDelete()`
+
+Called before deleting a model.
+
+### `@afterDelete()`
+
+Called after deleting a model.
+
+## Types
+
+### `ModelConstructor<T>`
+
+Type for model constructor.
+
+```typescript
+type ModelConstructor<T extends BaseModel> = {
+  new (): T
+  // ... static methods
+}
+```
+
+### `ModelAttributes<T>`
+
+Type for model attributes.
+
+```typescript
+type ModelAttributes<T extends BaseModel> = {
+  [K in keyof T]: T[K]
+}
+```
+
+### `SaveOptions`
+
+Options for save operations.
+
+```typescript
+interface SaveOptions {
+  client?: TransactionClient
+}
+```
+
+### `QueryOptions`
+
+Options for query operations.
+
+```typescript
+interface QueryOptions {
+  client?: TransactionClient
+}
+```
+
+### `CherryPick`
+
+Options for selective serialization.
+
+```typescript
+interface CherryPick {
+  fields?: {
+    pick?: string[]
+    omit?: string[]
+  }
+}
+```
+
+## Examples
+
+### Basic CRUD Operations
+
+```typescript
+// Create
+const user = await User.create({
+  name: 'John Doe',
+  email: 'john@example.com'
+})
+
+// Read
+const foundUser = await User.find(user._id)
+const userByEmail = await User.findBy('email', 'john@example.com')
+
+// Update
+user.name = 'John Smith'
+await user.save()
+
+// Delete
+await user.delete()
+```
+
+### Working with Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare email: string
+
+  @column()
+  declare password: string
+
+  @beforeSave()
+  static async normalizeEmail(user: User) {
+    if (user.$dirty.email) {
+      user.email = user.email.toLowerCase().trim()
+    }
+  }
+
+  @beforeCreate()
+  static async hashPassword(user: User) {
+    if (user.password) {
+      user.password = await Hash.make(user.password)
+    }
+  }
+}
+```
+
+### Custom Methods
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare isActive: boolean
+
+  // Instance method
+  async activate() {
+    this.isActive = true
+    await this.save()
+  }
+
+  // Static method
+  static async getActiveUsers() {
+    return this.query().where('isActive', true).all()
+  }
+}
+```
+
+## Next Steps
+
+- **[Query Builder API](/api/query-builder)** - Learn about building queries
+- **[Embedded Documents](/api/embedded-query-builder)** - Work with nested data
+- **[Database Manager](/api/database-manager)** - Manage connections and transactions

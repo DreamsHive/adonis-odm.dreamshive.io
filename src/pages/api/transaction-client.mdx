@@ -1,0 +1,624 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Transaction Client API
+description: Complete API reference for the Transaction Client in Adonis ODM
+---
+
+# Transaction Client API Reference
+
+The Transaction Client provides methods for managing MongoDB transactions, ensuring ACID properties across multiple operations. It handles transaction lifecycle, session management, and provides methods for commit, rollback, and transaction state monitoring.
+
+## Class Definition
+
+```typescript
+class TransactionClient {
+  // Transaction lifecycle
+  commit(): Promise<void>
+  rollback(): Promise<void>
+  isActive(): boolean
+  isCommitted(): boolean
+  isAborted(): boolean
+  
+  // Session management
+  getSession(): ClientSession
+  
+  // Query execution within transaction
+  query<T extends BaseModel>(model: T): ModelQueryBuilder<T>
+  rawQuery(query: any): Promise<any>
+  rawAggregate(pipeline: any[]): Promise<any[]>
+  
+  // Collection access
+  collection(name: string): Collection
+}
+```
+
+## Transaction Lifecycle
+
+### `commit()`
+
+Commit the transaction, making all changes permanent.
+
+```typescript
+commit(): Promise<void>
+```
+
+**Throws:**
+- `TransactionError` if transaction is not active
+- `MongoError` if commit fails
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+
+try {
+  const user = await User.create({
+    name: 'John Doe',
+    email: 'john@example.com'
+  }, { client: trx })
+
+  const profile = await UserProfile.create({
+    userId: user._id,
+    bio: 'Software developer'
+  }, { client: trx })
+
+  // Commit the transaction
+  await trx.commit()
+  console.log('Transaction committed successfully')
+} catch (error) {
+  await trx.rollback()
+  throw error
+}
+```
+
+### `rollback()`
+
+Rollback the transaction, discarding all changes.
+
+```typescript
+rollback(): Promise<void>
+```
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+
+try {
+  await User.create(userData, { client: trx })
+  
+  // Some operation that might fail
+  if (someCondition) {
+    throw new Error('Business logic error')
+  }
+  
+  await trx.commit()
+} catch (error) {
+  // Rollback on any error
+  await trx.rollback()
+  console.log('Transaction rolled back')
+  throw error
+}
+```
+
+### Transaction State Methods
+
+#### `isActive()`
+
+Check if the transaction is currently active.
+
+```typescript
+isActive(): boolean
+```
+
+#### `isCommitted()`
+
+Check if the transaction has been committed.
+
+```typescript
+isCommitted(): boolean
+```
+
+#### `isAborted()`
+
+Check if the transaction has been aborted/rolled back.
+
+```typescript
+isAborted(): boolean
+```
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+
+console.log('Active:', trx.isActive())     // true
+console.log('Committed:', trx.isCommitted()) // false
+console.log('Aborted:', trx.isAborted())   // false
+
+await trx.commit()
+
+console.log('Active:', trx.isActive())     // false
+console.log('Committed:', trx.isCommitted()) // true
+console.log('Aborted:', trx.isAborted())   // false
+```
+
+## Session Management
+
+### `getSession()`
+
+Get the underlying MongoDB session for the transaction.
+
+```typescript
+getSession(): ClientSession
+```
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+const session = trx.getSession()
+
+// Access session properties
+console.log('Session ID:', session.id)
+console.log('Transaction state:', session.transaction.state)
+
+// Use session directly with MongoDB driver
+const collection = Database.connection().collection('users')
+const result = await collection.findOne(
+  { email: 'john@example.com' },
+  { session }
+)
+```
+
+## Query Execution
+
+### `query(model)`
+
+Create a query builder for a model within the transaction.
+
+```typescript
+query<T extends BaseModel>(model: ModelConstructor<T>): ModelQueryBuilder<T>
+```
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+
+// Query within transaction
+const users = await trx.query(User)
+  .where('status', 'active')
+  .all()
+
+// Update within transaction
+await trx.query(User)
+  .where('_id', userId)
+  .update({ lastLoginAt: DateTime.now() })
+
+await trx.commit()
+```
+
+### `rawQuery(query)`
+
+Execute a raw MongoDB query within the transaction.
+
+```typescript
+rawQuery(query: any): Promise<any>
+```
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+
+// Raw insert
+const insertResult = await trx.rawQuery({
+  collection: 'users',
+  operation: 'insertOne',
+  document: {
+    name: 'Jane Doe',
+    email: 'jane@example.com',
+    createdAt: new Date()
+  }
+})
+
+// Raw update
+const updateResult = await trx.rawQuery({
+  collection: 'users',
+  operation: 'updateMany',
+  filter: { status: 'pending' },
+  update: { $set: { status: 'active' } }
+})
+
+await trx.commit()
+```
+
+### `rawAggregate(pipeline)`
+
+Execute an aggregation pipeline within the transaction.
+
+```typescript
+rawAggregate(pipeline: any[]): Promise<any[]>
+```
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+
+const stats = await trx.rawAggregate([
+  { $match: { status: 'active' } },
+  {
+    $group: {
+      _id: '$role',
+      count: { $sum: 1 },
+      avgAge: { $avg: '$age' }
+    }
+  }
+])
+
+await trx.commit()
+```
+
+## Collection Access
+
+### `collection(name)`
+
+Get a collection reference that uses the transaction session.
+
+```typescript
+collection(name: string): Collection
+```
+
+**Example:**
+```typescript
+const trx = await Database.transaction()
+
+// Get collection with transaction session
+const usersCollection = trx.collection('users')
+const postsCollection = trx.collection('posts')
+
+// Operations automatically use the transaction
+const user = await usersCollection.insertOne({
+  name: 'John Doe',
+  email: 'john@example.com'
+})
+
+const post = await postsCollection.insertOne({
+  title: 'My First Post',
+  authorId: user.insertedId,
+  content: 'Hello world!'
+})
+
+await trx.commit()
+```
+
+## Advanced Transaction Patterns
+
+### Nested Transactions (Savepoints)
+
+```typescript
+async function transferWithSavepoint(fromId: string, toId: string, amount: number) {
+  const trx = await Database.transaction()
+
+  try {
+    // Main transaction operations
+    const fromUser = await trx.query(User).findOrFail(fromId)
+    const toUser = await trx.query(User).findOrFail(toId)
+
+    if (fromUser.balance < amount) {
+      throw new Error('Insufficient funds')
+    }
+
+    // Create savepoint for nested operation
+    const savepoint = await trx.getSession().startTransaction()
+
+    try {
+      // Nested transaction operations
+      await trx.query(User)
+        .where('_id', fromId)
+        .decrement('balance', amount)
+
+      await trx.query(User)
+        .where('_id', toId)
+        .increment('balance', amount)
+
+      // Log the transaction
+      await TransactionLog.create({
+        fromUserId: fromId,
+        toUserId: toId,
+        amount,
+        type: 'transfer'
+      }, { client: trx })
+
+      await savepoint.commitTransaction()
+    } catch (error) {
+      await savepoint.abortTransaction()
+      throw error
+    }
+
+    await trx.commit()
+  } catch (error) {
+    await trx.rollback()
+    throw error
+  }
+}
+```
+
+### Transaction with Retry Logic
+
+```typescript
+async function withTransactionRetry<T>(
+  operation: (trx: TransactionClient) => Promise<T>,
+  maxRetries: number = 3
+): Promise<T> {
+  let lastError: Error
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const trx = await Database.transaction()
+
+    try {
+      const result = await operation(trx)
+      await trx.commit()
+      return result
+    } catch (error) {
+      await trx.rollback()
+      lastError = error
+
+      // Check if error is retryable
+      if (
+        error.errorLabels?.includes('TransientTransactionError') ||
+        error.errorLabels?.includes('UnknownTransactionCommitResult')
+      ) {
+        if (attempt < maxRetries) {
+          // Wait before retry with exponential backoff
+          await new Promise(resolve => 
+            setTimeout(resolve, Math.pow(2, attempt) * 100)
+          )
+          continue
+        }
+      }
+
+      throw error
+    }
+  }
+
+  throw lastError!
+}
+
+// Usage
+const result = await withTransactionRetry(async (trx) => {
+  const user = await User.create(userData, { client: trx })
+  const profile = await UserProfile.create(profileData, { client: trx })
+  return { user, profile }
+})
+```
+
+## Error Handling
+
+### Transaction Error Types
+
+```typescript
+try {
+  const trx = await Database.transaction()
+  
+  // Transaction operations
+  await someOperations(trx)
+  
+  await trx.commit()
+} catch (error) {
+  // Handle different error types
+  if (error.errorLabels?.includes('TransientTransactionError')) {
+    console.log('Transient error - can retry')
+  } else if (error.errorLabels?.includes('UnknownTransactionCommitResult')) {
+    console.log('Commit result unknown - check data state')
+  } else if (error.code === 11000) {
+    console.log('Duplicate key error')
+  } else if (error.name === 'ValidationError') {
+    console.log('Data validation failed')
+  } else {
+    console.log('Other transaction error:', error.message)
+  }
+}
+```
+
+### Transaction State Validation
+
+```typescript
+class TransactionValidator {
+  static validateState(trx: TransactionClient, operation: string) {
+    if (!trx.isActive()) {
+      throw new Error(`Cannot ${operation}: transaction is not active`)
+    }
+  }
+
+  static async safeCommit(trx: TransactionClient) {
+    if (trx.isActive()) {
+      try {
+        await trx.commit()
+      } catch (error) {
+        console.error('Commit failed:', error)
+        throw error
+      }
+    }
+  }
+
+  static async safeRollback(trx: TransactionClient) {
+    if (trx.isActive()) {
+      try {
+        await trx.rollback()
+      } catch (error) {
+        console.error('Rollback failed:', error)
+        // Don't throw on rollback failure
+      }
+    }
+  }
+}
+
+// Usage
+const trx = await Database.transaction()
+
+try {
+  TransactionValidator.validateState(trx, 'create user')
+  const user = await User.create(userData, { client: trx })
+  
+  await TransactionValidator.safeCommit(trx)
+} catch (error) {
+  await TransactionValidator.safeRollback(trx)
+  throw error
+}
+```
+
+## Performance Considerations
+
+### Transaction Scope
+
+```typescript
+// Good: Keep transactions short and focused
+async function createUserWithProfile(userData: any, profileData: any) {
+  return await Database.transaction(async (trx) => {
+    const user = await User.create(userData, { client: trx })
+    const profile = await UserProfile.create({
+      ...profileData,
+      userId: user._id
+    }, { client: trx })
+    
+    return { user, profile }
+  })
+}
+
+// Avoid: Long-running transactions
+async function badTransactionExample() {
+  const trx = await Database.transaction()
+  
+  try {
+    // Don't do this - external API calls in transactions
+    const externalData = await fetch('https://api.example.com/data')
+    
+    // Don't do this - heavy computations
+    const processedData = await heavyDataProcessing(data)
+    
+    // Don't do this - user input waiting
+    const userInput = await waitForUserInput()
+    
+    await trx.commit()
+  } catch (error) {
+    await trx.rollback()
+    throw error
+  }
+}
+```
+
+### Batch Operations
+
+```typescript
+async function batchCreateUsers(usersData: any[]) {
+  return await Database.transaction(async (trx) => {
+    // Efficient batch creation
+    const users = await User.createMany(usersData, { client: trx })
+    
+    // Batch profile creation
+    const profilesData = users.map(user => ({
+      userId: user._id,
+      displayName: user.name
+    }))
+    
+    const profiles = await UserProfile.createMany(profilesData, { client: trx })
+    
+    return { users, profiles }
+  })
+}
+```
+
+## Testing
+
+### Transaction Testing
+
+```typescript
+import { test } from '@japa/runner'
+import Database from '@ioc:Adonis/Lucid/Database'
+
+test.group('Transaction client', () => {
+  test('should commit transaction successfully', async ({ assert }) => {
+    const trx = await Database.transaction()
+    
+    assert.isTrue(trx.isActive())
+    assert.isFalse(trx.isCommitted())
+    assert.isFalse(trx.isAborted())
+    
+    const user = await User.create({
+      name: 'Test User',
+      email: 'test@example.com'
+    }, { client: trx })
+    
+    await trx.commit()
+    
+    assert.isFalse(trx.isActive())
+    assert.isTrue(trx.isCommitted())
+    assert.isFalse(trx.isAborted())
+    
+    // Verify data was persisted
+    const foundUser = await User.find(user._id)
+    assert.exists(foundUser)
+  })
+
+  test('should rollback transaction on error', async ({ assert }) => {
+    const trx = await Database.transaction()
+    
+    try {
+      await User.create({
+        name: 'Test User',
+        email: 'test@example.com'
+      }, { client: trx })
+      
+      // Simulate error
+      throw new Error('Test error')
+    } catch (error) {
+      await trx.rollback()
+    }
+    
+    assert.isFalse(trx.isActive())
+    assert.isFalse(trx.isCommitted())
+    assert.isTrue(trx.isAborted())
+    
+    // Verify no data was persisted
+    const userCount = await User.query().count()
+    assert.equal(userCount, 0)
+  })
+})
+```
+
+### Mock Transaction Client
+
+```typescript
+class MockTransactionClient {
+  private _isActive = true
+  private _isCommitted = false
+  private _isAborted = false
+
+  async commit(): Promise<void> {
+    this._isActive = false
+    this._isCommitted = true
+  }
+
+  async rollback(): Promise<void> {
+    this._isActive = false
+    this._isAborted = true
+  }
+
+  isActive(): boolean {
+    return this._isActive
+  }
+
+  isCommitted(): boolean {
+    return this._isCommitted
+  }
+
+  isAborted(): boolean {
+    return this._isAborted
+  }
+
+  // Mock other methods as needed
+}
+```
+
+## Next Steps
+
+- **[Database Manager API](/api/database-manager)** - Database connection management
+- **[BaseModel API](/api/base-model)** - Model methods with transactions
+- **[Database Transactions](/docs/transactions)** - Transaction usage patterns
+- **[Connection Management](/docs/connections)** - Connection configuration

@@ -1,0 +1,546 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Models
+description: Learn how to create and work with models in Adonis ODM
+---
+
+# Models
+
+Models in Adonis ODM represent your data structures and provide a convenient interface for interacting with MongoDB collections. They use decorators to define schema, relationships, and behavior with full TypeScript support.
+
+## Creating Models
+
+### Using the Make Command
+
+Generate a new model using the ace command:
+
+```bash
+node ace make:odm-model User
+```
+
+This creates a new model file in `app/models/`:
+
+```typescript
+import { BaseModel, column } from "adonis-odm";
+import { DateTime } from "luxon";
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime;
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime;
+}
+```
+
+### Manual Creation
+
+You can also create models manually by extending `BaseModel`:
+
+```typescript
+import { BaseModel, column } from "adonis-odm";
+import { DateTime } from "luxon";
+
+export default class Post extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare title: string;
+
+  @column()
+  declare content: string;
+
+  @column()
+  declare authorId: string;
+
+  @column()
+  declare isPublished: boolean;
+
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime;
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime;
+}
+```
+
+## Column Decorators
+
+### Basic Column
+
+The `@column()` decorator marks a property as a database field:
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare name: string;
+
+  @column()
+  declare email: string;
+
+  @column()
+  declare age?: number;
+}
+```
+
+### Primary Key
+
+Every model needs a primary key field:
+
+```typescript
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+}
+```
+
+### Column Options
+
+Customize column behavior with options:
+
+```typescript
+export default class User extends BaseModel {
+  @column({
+    columnName: "user_name", // Custom database field name
+    serialize: true, // Include in JSON serialization
+  })
+  declare name: string;
+
+  @column({
+    serialize: false, // Exclude from JSON serialization
+  })
+  declare password: string;
+
+  @column({
+    serialize: (value) => value.toUpperCase(), // Custom serialization
+  })
+  declare status: string;
+}
+```
+
+## Date/Time Columns
+
+### Auto-managed Timestamps
+
+Use `@column.dateTime()` for automatic timestamp management:
+
+```typescript
+export default class User extends BaseModel {
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime;
+
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime;
+}
+```
+
+### Custom Date Columns
+
+```typescript
+export default class User extends BaseModel {
+  @column.date()
+  declare birthDate: DateTime;
+
+  @column.dateTime()
+  declare lastLoginAt?: DateTime;
+
+  @column.dateTime({
+    serialize: (value) => value.toISO(), // Custom serialization
+  })
+  declare verifiedAt?: DateTime;
+}
+```
+
+## Embedded Documents
+
+Adonis ODM provides first-class support for embedded documents:
+
+### Single Embedded Document
+
+```typescript
+import { EmbeddedSingle } from "adonis-odm";
+
+// Profile model (embedded)
+export default class Profile extends BaseModel {
+  @column()
+  declare firstName: string;
+
+  @column()
+  declare lastName: string;
+
+  @column()
+  declare bio?: string;
+
+  get fullName(): string {
+    return `${this.firstName} ${this.lastName}`;
+  }
+}
+
+// User model with embedded profile
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column()
+  declare email: string;
+
+  @column.embedded(() => Profile, "single")
+  declare profile?: EmbeddedSingle<typeof Profile>;
+}
+```
+
+### Array of Embedded Documents
+
+```typescript
+import { EmbeddedMany } from "adonis-odm";
+
+export default class User extends BaseModel {
+  @column({ isPrimary: true })
+  declare _id: string;
+
+  @column.embedded(() => Address, "many")
+  declare addresses?: EmbeddedMany<typeof Address>;
+}
+```
+
+## Model Configuration
+
+### Custom Table Name
+
+Override the default collection name:
+
+```typescript
+export default class User extends BaseModel {
+  static table = "app_users";
+}
+```
+
+### Custom Connection
+
+Use a specific database connection:
+
+```typescript
+export default class User extends BaseModel {
+  static connection = "analytics";
+}
+```
+
+### Custom Primary Key
+
+Change the primary key field:
+
+```typescript
+export default class User extends BaseModel {
+  static primaryKey = "userId";
+
+  @column({ isPrimary: true })
+  declare userId: string;
+}
+```
+
+## Model Properties
+
+### State Properties
+
+Models track their state automatically:
+
+```typescript
+const user = new User();
+console.log(user.$isLocal); // true (not saved to database)
+console.log(user.$isPersisted); // false
+
+await user.save();
+console.log(user.$isLocal); // false
+console.log(user.$isPersisted); // true
+
+user.name = "Updated Name";
+console.log(user.$dirty); // { name: 'Updated Name' }
+console.log(user.$original); // Original values before changes
+```
+
+### Computed Properties
+
+Add computed properties using getters:
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare firstName: string;
+
+  @column()
+  declare lastName: string;
+
+  get fullName(): string {
+    return `${this.firstName} ${this.lastName}`;
+  }
+
+  get initials(): string {
+    return `${this.firstName[0]}${this.lastName[0]}`.toUpperCase();
+  }
+}
+```
+
+## Serialization
+
+### Default Serialization
+
+Models automatically serialize to JSON:
+
+```typescript
+const user = await User.find("507f1f77bcf86cd799439011");
+const json = user.toJSON();
+// or
+const json = user.serialize();
+```
+
+### Custom Serialization
+
+Control what gets serialized:
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare name: string;
+
+  @column({ serialize: false })
+  declare password: string;
+
+  @column({
+    serialize: (value) => value.toUpperCase(),
+  })
+  declare status: string;
+
+  // Custom serialization method
+  serialize(cherryPick?: CherryPick) {
+    return {
+      ...super.serialize(cherryPick),
+      displayName: this.fullName,
+    };
+  }
+}
+```
+
+### Selective Serialization
+
+Pick specific fields for serialization:
+
+```typescript
+const user = await User.find("507f1f77bcf86cd799439011");
+
+// Only include specific fields
+const json = user.serialize({
+  fields: {
+    pick: ["name", "email", "createdAt"],
+  },
+});
+
+// Exclude specific fields
+const json = user.serialize({
+  fields: {
+    omit: ["password", "secretKey"],
+  },
+});
+```
+
+## Model Hooks
+
+### Available Hooks
+
+```typescript
+export default class User extends BaseModel {
+  @beforeSave()
+  static async hashPassword(user: User) {
+    if (user.$dirty.password) {
+      user.password = await Hash.make(user.password);
+    }
+  }
+
+  @beforeCreate()
+  static async generateSlug(user: User) {
+    user.slug = slugify(user.name);
+  }
+
+  @afterCreate()
+  static async sendWelcomeEmail(user: User) {
+    await Mail.send("welcome", { user }, (message) => {
+      message.to(user.email);
+    });
+  }
+
+  @beforeUpdate()
+  static async updateSlug(user: User) {
+    if (user.$dirty.name) {
+      user.slug = slugify(user.name);
+    }
+  }
+
+  @afterUpdate()
+  static async logUpdate(user: User) {
+    console.log(`User ${user._id} was updated`);
+  }
+
+  @beforeDelete()
+  static async cleanup(user: User) {
+    // Clean up related data
+    await Post.query().where("authorId", user._id).delete();
+  }
+}
+```
+
+## Model Methods
+
+### Instance Methods
+
+Add custom methods to model instances:
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare email: string;
+
+  @column()
+  declare isActive: boolean;
+
+  // Instance method
+  async activate() {
+    this.isActive = true;
+    this.activatedAt = DateTime.now();
+    await this.save();
+  }
+
+  async deactivate() {
+    this.isActive = false;
+    await this.save();
+  }
+
+  async sendNotification(message: string) {
+    // Send notification logic
+  }
+}
+
+// Usage
+const user = await User.find("507f1f77bcf86cd799439011");
+await user.activate();
+```
+
+### Static Methods
+
+Add custom static methods to the model class:
+
+```typescript
+export default class User extends BaseModel {
+  // Static method
+  static async findByEmail(email: string) {
+    return this.query().where("email", email).first();
+  }
+
+  static async getActiveUsers() {
+    return this.query().where("isActive", true).all();
+  }
+
+  static async createWithProfile(userData: any, profileData: any) {
+    const user = await this.create(userData);
+    user.profile = profileData;
+    await user.save();
+    return user;
+  }
+}
+
+// Usage
+const user = await User.findByEmail("john@example.com");
+const activeUsers = await User.getActiveUsers();
+```
+
+## Best Practices
+
+### 1. Use TypeScript Declarations
+
+Always use `declare` for decorated properties:
+
+```typescript
+// ✅ Correct
+@column()
+declare name: string
+
+// ❌ Incorrect
+@column()
+name: string
+```
+
+### 2. Define Proper Types
+
+Use specific types for better type safety:
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare name: string;
+
+  @column()
+  declare age: number;
+
+  @column()
+  declare isActive: boolean;
+
+  @column()
+  declare tags: string[];
+
+  @column()
+  declare metadata: Record<string, any>;
+}
+```
+
+### 3. Use Computed Properties
+
+Leverage getters for derived data:
+
+```typescript
+export default class User extends BaseModel {
+  @column()
+  declare firstName: string;
+
+  @column()
+  declare lastName: string;
+
+  @column.dateTime()
+  declare birthDate: DateTime;
+
+  get fullName(): string {
+    return `${this.firstName} ${this.lastName}`;
+  }
+
+  get age(): number {
+    return DateTime.now().diff(this.birthDate, "years").years;
+  }
+}
+```
+
+### 4. Organize Related Models
+
+Group related models in subdirectories:
+
+```
+app/
+  models/
+    user/
+      user.ts
+      profile.ts
+      preferences.ts
+    blog/
+      post.ts
+      comment.ts
+      category.ts
+```
+
+## Next Steps
+
+Now that you understand models and decorators:
+
+1. **[Learn Query Builder](/docs/query-builder)** - Build complex queries
+2. **[Explore CRUD Operations](/docs/crud-operations)** - Create, read, update, delete
+3. **[Work with Embedded Documents](/docs/embedded-documents)** - Nested data structures
+4. **[Understand Relationships](/docs/relationships)** - Connect your models

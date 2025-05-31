@@ -1,0 +1,182 @@
+---
+export interface Props {
+  packageName: string;
+  command?: 'install' | 'add' | 'i';
+}
+
+const { packageName, command = 'install' } = Astro.props;
+
+// Define the package manager commands
+const packageManagers = [
+  {
+    id: 'npm',
+    label: 'npm',
+    command: command === 'install' ? 'npm i' : `npm ${command}`,
+  },
+  {
+    id: 'yarn',
+    label: 'yarn',
+    command: 'yarn add',
+  },
+  {
+    id: 'pnpm',
+    label: 'pnpm',
+    command: 'pnpm add',
+  },
+  {
+    id: 'bun',
+    label: 'bun',
+    command: 'bun add',
+  },
+];
+---
+
+<div class="package-manager-tabs" data-default-tab="npm">
+  <!-- Tab buttons -->
+  <div class="tab-list" role="tablist">
+    {packageManagers.map((pm, index) => (
+      <button
+        class={`tab-button ${index === 0 ? 'active' : ''}`}
+        role="tab"
+        data-tab={pm.id}
+        aria-selected={index === 0 ? 'true' : 'false'}
+        aria-controls={`panel-${pm.id}`}
+        id={`tab-${pm.id}`}
+      >
+        {pm.label}
+      </button>
+    ))}
+  </div>
+
+  <!-- Tab panels -->
+  <div class="tab-panels">
+    {packageManagers.map((pm, index) => (
+      <div
+        class={`tab-panel ${index === 0 ? 'active' : ''}`}
+        role="tabpanel"
+        id={`panel-${pm.id}`}
+        aria-labelledby={`tab-${pm.id}`}
+        data-tab={pm.id}
+      >
+        <pre><code class="language-bash">{pm.command} {packageName}</code></pre>
+      </div>
+    ))}
+  </div>
+</div>
+
+<script>
+  function initializePackageManagerTabs() {
+    const tabContainers = document.querySelectorAll('.package-manager-tabs');
+
+    tabContainers.forEach(container => {
+      const tabButtons = container.querySelectorAll('.tab-button');
+      const tabPanels = container.querySelectorAll('.tab-panel');
+
+      tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          const targetTab = button.getAttribute('data-tab');
+
+          // Remove active class from all buttons and panels
+          tabButtons.forEach(btn => {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-selected', 'false');
+          });
+
+          tabPanels.forEach(panel => {
+            panel.classList.remove('active');
+          });
+
+          // Add active class to clicked button and corresponding panel
+          button.classList.add('active');
+          button.setAttribute('aria-selected', 'true');
+
+          const targetPanel = container.querySelector(`.tab-panel[data-tab="${targetTab}"]`);
+          if (targetPanel) {
+            targetPanel.classList.add('active');
+          }
+        });
+      });
+    });
+  }
+
+  // Initialize on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializePackageManagerTabs);
+  } else {
+    initializePackageManagerTabs();
+  }
+
+  // Re-initialize on Astro page transitions
+  document.addEventListener('astro:page-load', initializePackageManagerTabs);
+</script>
+
+<style>
+  .package-manager-tabs {
+    @apply border border-gray-200 rounded-lg overflow-hidden;
+  }
+
+  .dark .package-manager-tabs {
+    @apply border-gray-700;
+  }
+
+  .tab-list {
+    @apply flex bg-gray-100 border-b border-gray-300;
+  }
+
+  .dark .tab-list {
+    @apply bg-gray-800 border-gray-600;
+  }
+
+  .tab-button {
+    @apply px-4 py-3 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 transition-all duration-200 border-r border-gray-300 last:border-r-0 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset relative;
+  }
+
+  .dark .tab-button {
+    @apply text-gray-300 hover:text-white hover:bg-gray-700 border-gray-600;
+  }
+
+  .tab-button.active {
+    @apply bg-white text-blue-600 font-semibold;
+  }
+
+  .tab-button.active::after {
+    @apply absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500;
+    content: '';
+  }
+
+  .dark .tab-button.active {
+    @apply bg-gray-900 text-blue-400;
+  }
+
+  .dark .tab-button.active::after {
+    @apply bg-blue-400;
+  }
+
+  .tab-panels {
+    @apply relative;
+  }
+
+  .tab-panel {
+    @apply hidden;
+  }
+
+  .tab-panel.active {
+    @apply block;
+  }
+
+  .tab-panel pre {
+    @apply m-0 border-0 rounded-none bg-gray-800 text-gray-100 p-4;
+  }
+
+  .tab-panel code {
+    @apply text-sm font-mono text-green-400;
+  }
+
+  .dark .tab-panel pre {
+    @apply bg-gray-900;
+  }
+
+  .dark .tab-panel code {
+    @apply text-green-300;
+  }
+</style>

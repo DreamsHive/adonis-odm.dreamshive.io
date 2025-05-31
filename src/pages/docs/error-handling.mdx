@@ -1,0 +1,670 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Error Handling
+description: Learn how to handle errors effectively in Adonis ODM with custom exception types and best practices
+---
+
+# Error Handling
+
+Adonis ODM provides comprehensive error handling with custom exception types for different scenarios. This guide covers all the exception types, error handling patterns, and best practices for building robust applications.
+
+## Exception Types
+
+### Base Exception
+
+All ODM exceptions inherit from the base `MongoOdmException`:
+
+```typescript
+import { MongoOdmException } from 'adonis-odm'
+
+try {
+  // ODM operations
+} catch (error) {
+  if (error instanceof MongoOdmException) {
+    console.log('ODM Error:', error.message)
+    console.log('Error code:', error.code)
+    console.log('Error status:', error.status)
+  }
+}
+```
+
+### ModelNotFoundException
+
+Thrown when a model cannot be found using `findOrFail()` or similar methods:
+
+```typescript
+import { ModelNotFoundException } from 'adonis-odm'
+
+try {
+  const user = await User.findOrFail('invalid-id')
+} catch (error) {
+  if (error instanceof ModelNotFoundException) {
+    console.log('User not found:', error.message)
+    // Error message: "User with identifier "invalid-id" not found"
+  }
+}
+
+// Also thrown by other "OrFail" methods
+try {
+  const user = await User.findByOrFail('email', 'nonexistent@example.com')
+  const firstUser = await User.firstOrFail()
+} catch (error) {
+  if (error instanceof ModelNotFoundException) {
+    // Handle not found scenarios
+  }
+}
+```
+
+### ConnectionException
+
+Thrown when database connection issues occur:
+
+```typescript
+import { ConnectionException } from 'adonis-odm'
+
+try {
+  await db.connect()
+} catch (error) {
+  if (error instanceof ConnectionException) {
+    console.log('Connection failed:', error.message)
+    // Error message: "Failed to connect to MongoDB connection "primary": ..."
+    
+    // Check specific connection issues
+    if (error.message.includes('ECONNREFUSED')) {
+      console.log('MongoDB server is not running')
+    } else if (error.message.includes('authentication failed')) {
+      console.log('Invalid credentials')
+    }
+  }
+}
+```
+
+### DatabaseOperationException
+
+Thrown when database operations fail:
+
+```typescript
+import { DatabaseOperationException } from 'adonis-odm'
+
+try {
+  await User.query().where('invalid.field', 'value').all()
+} catch (error) {
+  if (error instanceof DatabaseOperationException) {
+    console.log('Database operation failed:', error.message)
+    // Error message: "Database operation "find" failed: ..."
+    
+    // Access original MongoDB error
+    console.log('MongoDB error code:', error.originalError?.code)
+  }
+}
+```
+
+### ValidationException
+
+Thrown when model validation fails:
+
+```typescript
+import { ValidationException } from 'adonis-odm'
+
+try {
+  const user = new User()
+  user.email = 'invalid-email'
+  await user.save()
+} catch (error) {
+  if (error instanceof ValidationException) {
+    console.log('Validation failed:', error.message)
+    // Error message: "Validation failed for field "email" with value "invalid-email": must be a valid email"
+    
+    // Access validation details
+    console.log('Field:', error.field)
+    console.log('Value:', error.value)
+    console.log('Rules:', error.rules)
+  }
+}
+```
+
+### TransactionException
+
+Thrown when transaction operations fail:
+
+```typescript
+import { TransactionException } from 'adonis-odm'
+
+try {
+  await db.transaction(async (trx) => {
+    // Transaction operations that fail
+    throw new Error('Something went wrong')
+  })
+} catch (error) {
+  if (error instanceof TransactionException) {
+    console.log('Transaction failed:', error.message)
+    // Error message: "Transaction operation "commit" failed: ..."
+    
+    // Check if transaction was rolled back
+    if (error.operation === 'rollback') {
+      console.log('Transaction was rolled back')
+    }
+  }
+}
+```
+
+## Error Handling Patterns
+
+### Controller Error Handling
+
+```typescript
+export default class UserController {
+  public async show({ params, response }: HttpContext) {
+    try {
+      const user = await User.findOrFail(params.id)
+      return user
+    } catch (error) {
+      if (error instanceof ModelNotFoundException) {
+        return response.status(404).json({ 
+          error: 'User not found',
+          message: error.message 
+        })
+      }
+      
+      if (error instanceof DatabaseOperationException) {
+        return response.status(500).json({ 
+          error: 'Database error',
+          message: 'An error occurred while fetching the user' 
+        })
+      }
+      
+      throw error // Re-throw other errors
+    }
+  }
+
+  public async store({ request, response }: HttpContext) {
+    try {
+      const userData = request.only(['name', 'email', 'age'])
+      const user = await User.create(userData)
+      return response.status(201).json(user)
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        return response.status(422).json({ 
+          error: 'Validation failed',
+          field: error.field,
+          message: error.message 
+        })
+      }
+      
+      // Handle MongoDB duplicate key error
+      if (error.code === 11000) {
+        return response.status(409).json({ 
+          error: 'Duplicate entry',
+          message: 'Email already exists' 
+        })
+      }
+      
+      throw error
+    }
+  }
+
+  public async update({ params, request, response }: HttpContext) {
+    try {
+      const user = await User.findOrFail(params.id)
+      const userData = request.only(['name', 'email', 'age'])
+      
+      user.merge(userData)
+      await user.save()
+      
+      return user
+    } catch (error) {
+      if (error instanceof ModelNotFoundException) {
+        return response.status(404).json({ error: 'User not found' })
+      }
+      
+      if (error instanceof ValidationException) {
+        return response.status(422).json({ 
+          error: 'Validation failed',
+          message: error.message 
+        })
+      }
+      
+      throw error
+    }
+  }
+}
+```
+
+### Global Exception Handler
+
+Create a global exception handler for consistent error responses:
+
+```typescript
+import { ExceptionHandler } from '@adonisjs/core/types'
+import { HttpContext } from '@adonisjs/core/http'
+import {
+  MongoOdmException,
+  ModelNotFoundException,
+  ValidationException,
+  ConnectionException,
+  DatabaseOperationException,
+  TransactionException
+} from 'adonis-odm'
+
+export default class HttpExceptionHandler extends ExceptionHandler {
+  public async handle(error: unknown, ctx: HttpContext) {
+    const { response } = ctx
+
+    // Handle ODM-specific exceptions
+    if (error instanceof ModelNotFoundException) {
+      return response.status(404).json({
+        error: 'Resource not found',
+        message: error.message,
+        code: 'E_MODEL_NOT_FOUND'
+      })
+    }
+
+    if (error instanceof ValidationException) {
+      return response.status(422).json({
+        error: 'Validation failed',
+        message: error.message,
+        field: error.field,
+        value: error.value,
+        code: 'E_VALIDATION_FAILURE'
+      })
+    }
+
+    if (error instanceof ConnectionException) {
+      return response.status(503).json({
+        error: 'Service unavailable',
+        message: 'Database connection failed',
+        code: 'E_CONNECTION_FAILURE'
+      })
+    }
+
+    if (error instanceof DatabaseOperationException) {
+      return response.status(500).json({
+        error: 'Database error',
+        message: 'An error occurred while processing your request',
+        code: 'E_DATABASE_OPERATION_FAILED'
+      })
+    }
+
+    if (error instanceof TransactionException) {
+      return response.status(500).json({
+        error: 'Transaction failed',
+        message: 'The operation could not be completed',
+        code: 'E_TRANSACTION_FAILED'
+      })
+    }
+
+    // Handle MongoDB-specific errors
+    if (error.name === 'MongoError') {
+      if (error.code === 11000) {
+        return response.status(409).json({
+          error: 'Duplicate entry',
+          message: 'A record with this information already exists',
+          code: 'E_DUPLICATE_ENTRY'
+        })
+      }
+
+      if (error.code === 121) {
+        return response.status(422).json({
+          error: 'Document validation failed',
+          message: 'The document does not match the required schema',
+          code: 'E_DOCUMENT_VALIDATION_FAILED'
+        })
+      }
+    }
+
+    // Fall back to default handler
+    return super.handle(error, ctx)
+  }
+
+  public async report(error: unknown, ctx: HttpContext) {
+    // Log ODM exceptions with additional context
+    if (error instanceof MongoOdmException) {
+      console.error('ODM Exception:', {
+        type: error.constructor.name,
+        message: error.message,
+        code: error.code,
+        status: error.status,
+        stack: error.stack,
+        context: {
+          url: ctx.request.url(),
+          method: ctx.request.method(),
+          ip: ctx.request.ip()
+        }
+      })
+    }
+
+    return super.report(error, ctx)
+  }
+}
+```
+
+### Service Layer Error Handling
+
+```typescript
+export default class UserService {
+  public async createUser(userData: any) {
+    try {
+      // Validate email uniqueness
+      const existingUser = await User.findBy('email', userData.email)
+      if (existingUser) {
+        throw new ValidationException(
+          'Email already exists',
+          'email',
+          userData.email,
+          ['unique']
+        )
+      }
+
+      const user = await User.create(userData)
+      return { success: true, user }
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        return { 
+          success: false, 
+          error: 'validation_failed',
+          message: error.message,
+          field: error.field
+        }
+      }
+
+      if (error instanceof DatabaseOperationException) {
+        return { 
+          success: false, 
+          error: 'database_error',
+          message: 'Failed to create user'
+        }
+      }
+
+      throw error // Re-throw unexpected errors
+    }
+  }
+
+  public async updateUser(id: string, userData: any) {
+    try {
+      const user = await User.findOrFail(id)
+      
+      // Check email uniqueness if email is being changed
+      if (userData.email && userData.email !== user.email) {
+        const existingUser = await User.query()
+          .where('email', userData.email)
+          .where('_id', '!=', id)
+          .first()
+
+        if (existingUser) {
+          throw new ValidationException(
+            'Email already exists',
+            'email',
+            userData.email,
+            ['unique']
+          )
+        }
+      }
+
+      user.merge(userData)
+      await user.save()
+
+      return { success: true, user }
+    } catch (error) {
+      if (error instanceof ModelNotFoundException) {
+        return { 
+          success: false, 
+          error: 'user_not_found',
+          message: 'User not found'
+        }
+      }
+
+      if (error instanceof ValidationException) {
+        return { 
+          success: false, 
+          error: 'validation_failed',
+          message: error.message,
+          field: error.field
+        }
+      }
+
+      throw error
+    }
+  }
+}
+```
+
+## Transaction Error Handling
+
+### Graceful Transaction Rollback
+
+```typescript
+async function transferData() {
+  try {
+    await db.transaction(async (trx) => {
+      const user = await User.create({ 
+        name: 'John',
+        email: 'john@example.com' 
+      }, { client: trx })
+      
+      const profile = await UserProfile.create({ 
+        userId: user._id,
+        firstName: 'John',
+        lastName: 'Doe'
+      }, { client: trx })
+
+      // If any operation fails, transaction is automatically rolled back
+      return { user, profile }
+    })
+  } catch (error) {
+    if (error instanceof TransactionException) {
+      console.log('Transaction failed and was rolled back')
+      
+      // Log transaction details
+      console.log('Operation:', error.operation)
+      console.log('Original error:', error.originalError?.message)
+    }
+    
+    if (error instanceof ValidationException) {
+      console.log('Validation failed during transaction')
+    }
+    
+    // Handle other errors
+    throw error
+  }
+}
+```
+
+### Retry Logic for Transactions
+
+```typescript
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3
+): Promise<T> {
+  let lastError: Error
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+
+      // Check if error is retryable
+      if (
+        error instanceof TransactionException ||
+        error.errorLabels?.includes('TransientTransactionError') ||
+        error.errorLabels?.includes('UnknownTransactionCommitResult')
+      ) {
+        if (attempt < maxRetries) {
+          console.log(`Transaction attempt ${attempt} failed, retrying...`)
+          
+          // Wait before retry with exponential backoff
+          await new Promise(resolve => 
+            setTimeout(resolve, Math.pow(2, attempt) * 100)
+          )
+          continue
+        }
+      }
+
+      throw error
+    }
+  }
+
+  throw lastError!
+}
+
+// Usage
+const result = await withRetry(async () => {
+  return await db.transaction(async (trx) => {
+    // Your transaction operations
+    return await performComplexOperation(trx)
+  })
+})
+```
+
+## Best Practices
+
+### 1. Use Specific Exception Types
+
+```typescript
+// Good: Handle specific exceptions
+try {
+  const user = await User.findOrFail(id)
+} catch (error) {
+  if (error instanceof ModelNotFoundException) {
+    // Handle not found specifically
+  } else if (error instanceof DatabaseOperationException) {
+    // Handle database errors specifically
+  }
+}
+
+// Avoid: Generic error handling
+try {
+  const user = await User.findOrFail(id)
+} catch (error) {
+  // Generic handling loses important context
+  console.log('Something went wrong')
+}
+```
+
+### 2. Provide Meaningful Error Messages
+
+```typescript
+// Good: Descriptive error messages
+if (!userData.email) {
+  throw new ValidationException(
+    'Email is required for user registration',
+    'email',
+    undefined,
+    ['required']
+  )
+}
+
+// Avoid: Generic messages
+if (!userData.email) {
+  throw new Error('Invalid input')
+}
+```
+
+### 3. Log Errors Appropriately
+
+```typescript
+// Good: Structured logging
+try {
+  await User.create(userData)
+} catch (error) {
+  if (error instanceof ValidationException) {
+    // Log validation errors at info level
+    console.info('Validation failed:', {
+      field: error.field,
+      value: error.value,
+      rules: error.rules
+    })
+  } else if (error instanceof DatabaseOperationException) {
+    // Log database errors at error level
+    console.error('Database operation failed:', {
+      operation: error.operation,
+      originalError: error.originalError?.message
+    })
+  }
+}
+```
+
+### 4. Handle Errors at the Right Level
+
+```typescript
+// Good: Handle errors where you can take action
+export default class UserController {
+  public async store({ request, response }: HttpContext) {
+    try {
+      const result = await this.userService.createUser(request.all())
+      
+      if (!result.success) {
+        return response.status(422).json(result)
+      }
+      
+      return response.status(201).json(result.user)
+    } catch (error) {
+      // Only handle unexpected errors here
+      throw error
+    }
+  }
+}
+
+// Service handles business logic errors
+export default class UserService {
+  public async createUser(userData: any) {
+    try {
+      return await User.create(userData)
+    } catch (error) {
+      if (error instanceof ValidationException) {
+        // Transform to business result
+        return { 
+          success: false, 
+          error: 'validation_failed',
+          details: error.message 
+        }
+      }
+      throw error // Let controller handle unexpected errors
+    }
+  }
+}
+```
+
+## Testing Error Scenarios
+
+```typescript
+import { test } from '@japa/runner'
+import { ModelNotFoundException, ValidationException } from 'adonis-odm'
+
+test.group('Error handling', () => {
+  test('should throw ModelNotFoundException for invalid ID', async ({ assert }) => {
+    await assert.rejects(
+      async () => await User.findOrFail('invalid-id'),
+      ModelNotFoundException
+    )
+  })
+
+  test('should throw ValidationException for invalid data', async ({ assert }) => {
+    await assert.rejects(
+      async () => await User.create({ email: 'invalid-email' }),
+      ValidationException
+    )
+  })
+
+  test('should handle transaction failures gracefully', async ({ assert }) => {
+    await assert.rejects(async () => {
+      await db.transaction(async (trx) => {
+        await User.create({ name: 'Test' }, { client: trx })
+        throw new Error('Simulated failure')
+      })
+    })
+
+    // Verify rollback - user should not exist
+    const userCount = await User.query().count()
+    assert.equal(userCount, 0)
+  })
+})
+```
+
+## Next Steps
+
+- **[Validation](/docs/validation)** - Learn about model validation
+- **[Testing](/docs/testing)** - Test your error handling
+- **[Performance Optimization](/docs/performance)** - Optimize error handling performance
+- **[Model Lifecycle](/docs/lifecycle)** - Handle errors in lifecycle hooks
