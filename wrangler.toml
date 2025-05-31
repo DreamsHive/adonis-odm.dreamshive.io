@@ -13,3 +13,4 @@ local_protocol = "http"
 # Cloudflare Pages will use the build command from package.json
 # Build command: npm run build
 # Build output directory: dist
+# Custom domain: adonis-odm.dreamshive.io

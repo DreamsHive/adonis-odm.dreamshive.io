@@ -5,7 +5,7 @@ import mdx from "@astrojs/mdx";
 // https://astro.build/config
 export default defineConfig({
   output: "static",
-  site: "https://adonis-odm.dreamshive.io", // Update this to your actual domain
+  site: "https://adonis-odm.dreamshive.io",
   integrations: [
     tailwind({
       applyBaseStyles: false,

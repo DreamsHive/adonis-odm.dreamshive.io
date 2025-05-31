@@ -1,36 +1,9 @@
-# Redirect trailing slashes to clean URLs
-/docs/introduction/  /docs/introduction  301
-/docs/installation/  /docs/installation  301
-/docs/configuration/  /docs/configuration  301
-/docs/commands/  /docs/commands  301
-/docs/models/  /docs/models  301
-/docs/query-builder/  /docs/query-builder  301
-/docs/crud-operations/  /docs/crud-operations  301
-/docs/relationships/  /docs/relationships  301
-/docs/embedded-documents/  /docs/embedded-documents  301
-/docs/transactions/  /docs/transactions  301
-/docs/validation/  /docs/validation  301
-/docs/lifecycle/  /docs/lifecycle  301
-/docs/connections/  /docs/connections  301
-/docs/testing/  /docs/testing  301
-/docs/performance/  /docs/performance  301
-/docs/pagination/  /docs/pagination  301
-/docs/search/  /docs/search  301
-/docs/error-handling/  /docs/error-handling  301
-/docs/crud/  /docs/crud  301
+# Simple redirects for common patterns
+# Note: Astro builds with directory format, so /docs/introduction/ serves /docs/introduction/index.html
+# We don't need explicit trailing slash redirects as they can cause loops
 
-# API Reference redirects
-/api/base-model/  /api/base-model  301
-/api/query-builder/  /api/query-builder  301
-/api/embedded-query-builder/  /api/embedded-query-builder  301
-/api/transaction-client/  /api/transaction-client  301
-/api/database-manager/  /api/database-manager  301
+# Legacy URL redirects (if you had different URL patterns before)
+# /old-docs/* /docs/:splat 301
 
-# Examples redirects
-/examples/basic-usage/  /examples/basic-usage  301
-/examples/advanced-queries/  /examples/advanced-queries  301
-/examples/embedded-documents/  /examples/embedded-documents  301
-/examples/transactions/  /examples/transactions  301
-
-# Fallback for SPA-like behavior (if needed)
+# Fallback for SPA-like behavior (commented out for static sites)
 # /* /index.html 200
