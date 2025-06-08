@@ -1,0 +1,899 @@
+---
+layout: ../../layouts/DocsLayout.astro
+title: Database Seeders
+description: Learn how to create and manage database seeders in Adonis ODM for populating your MongoDB collections with test data
+---
+
+# Database Seeders
+
+Database seeders in Adonis ODM provide a convenient way to populate your MongoDB collections with test data, sample records, or initial application data. Seeders are particularly useful for development, testing, and setting up demo environments.
+
+## CLI Commands
+
+### Creating Seeders
+
+#### `make:odm-seeder`
+
+Generate a new seeder file with the proper structure:
+
+```bash
+# Create a basic seeder
+node ace make:odm-seeder User
+
+# Create seeder in subdirectory
+node ace make:odm-seeder admin/User
+```
+
+**Generated file structure:**
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    // Add your seeding logic here
+    await User.createMany([
+      {
+        name: "John Doe",
+        email: "john@example.com",
+      },
+      {
+        name: "Jane Smith",
+        email: "jane@example.com",
+      },
+    ]);
+  }
+}
+```
+
+### Running Seeders
+
+#### `odm:seed`
+
+Execute seeders to populate your database:
+
+```bash
+# Run all seeders
+node ace odm:seed
+
+# Run specific seeder files
+node ace odm:seed --files="./database/seeders/user_seeder.ts"
+
+# Run multiple specific seeders
+node ace odm:seed --files="./database/seeders/user_seeder.ts,./database/seeders/post_seeder.ts"
+
+# Run seeders interactively (choose which ones to run)
+node ace odm:seed --interactive
+
+# Run seeders for specific connection
+node ace odm:seed --connection=analytics
+```
+
+**Options:**
+
+- `--files` - Comma-separated list of seeder files to run
+- `--interactive` - Choose seeders to run interactively
+- `--connection` - Specify database connection to use
+
+### Database Operations
+
+#### Upcoming Commands
+
+The following database management commands are planned for future releases:
+
+```bash
+# Test database connection (coming soon)
+node ace mongodb:status
+
+# Show database information (coming soon)
+node ace mongodb:info
+```
+
+#### `mongodb:status` (Coming Soon)
+
+Check the status and connectivity of your MongoDB connections across all configured databases.
+
+#### `mongodb:info` (Coming Soon)
+
+Display comprehensive information about your MongoDB setup including:
+
+- Server version and configuration
+- Database statistics and collection information
+- Index information and performance metrics
+- Connection pool status
+
+## Quick Start
+
+### 1. Create Your First Seeder
+
+```bash
+node ace make:odm-seeder User
+```
+
+### 2. Define Seeding Logic
+
+Edit the generated seeder file:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import { DateTime } from "luxon";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    // Create sample users
+    await User.createMany([
+      {
+        name: "Admin User",
+        email: "admin@example.com",
+        role: "admin",
+        isActive: true,
+        createdAt: DateTime.now(),
+      },
+      {
+        name: "Regular User",
+        email: "user@example.com",
+        role: "user",
+        isActive: true,
+        createdAt: DateTime.now(),
+      },
+      {
+        name: "Test User",
+        email: "test@example.com",
+        role: "user",
+        isActive: false,
+        createdAt: DateTime.now().minus({ days: 30 }),
+      },
+    ]);
+
+    console.log("✅ Users seeded successfully");
+  }
+}
+```
+
+### 3. Run the Seeder
+
+```bash
+node ace odm:seed --files="./database/seeders/user_seeder.ts"
+```
+
+## Advanced Features
+
+### Environment-Specific Seeders
+
+Create different seeders for different environments:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import env from "#start/env";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    if (env.get("NODE_ENV") === "development") {
+      // Development data
+      await this.seedDevelopmentUsers();
+    } else if (env.get("NODE_ENV") === "testing") {
+      // Test data
+      await this.seedTestUsers();
+    } else {
+      // Production initial data
+      await this.seedProductionUsers();
+    }
+  }
+
+  private async seedDevelopmentUsers() {
+    await User.createMany([
+      { name: "Dev User 1", email: "dev1@example.com" },
+      { name: "Dev User 2", email: "dev2@example.com" },
+      // ... more development users
+    ]);
+  }
+
+  private async seedTestUsers() {
+    await User.createMany([{ name: "Test User", email: "test@example.com" }]);
+  }
+
+  private async seedProductionUsers() {
+    // Only create essential admin user in production
+    await User.firstOrCreate(
+      { email: "admin@yourapp.com" },
+      {
+        name: "System Admin",
+        email: "admin@yourapp.com",
+        role: "admin",
+      }
+    );
+  }
+}
+```
+
+### Execution Order and Dependencies
+
+Control seeder execution order using dependencies:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import Post from "#models/post";
+
+export default class PostSeeder extends BaseSeeder {
+  // Define dependencies - this seeder runs after UserSeeder
+  static dependencies = ["UserSeeder"];
+
+  async run() {
+    // Get existing users to create posts for
+    const users = await User.all();
+
+    if (users.length === 0) {
+      console.log("⚠️  No users found. Run UserSeeder first.");
+      return;
+    }
+
+    const posts = [];
+    for (const user of users) {
+      posts.push({
+        title: `Sample Post by ${user.name}`,
+        content: "This is a sample post content.",
+        authorId: user._id,
+        isPublished: true,
+      });
+    }
+
+    await Post.createMany(posts);
+    console.log(`✅ Created ${posts.length} posts`);
+  }
+}
+```
+
+### Main Seeders
+
+Create a main seeder that orchestrates other seeders:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+
+export default class MainSeeder extends BaseSeeder {
+  async run() {
+    // Run seeders in specific order
+    await this.call([
+      "UserSeeder",
+      "CategorySeeder",
+      "PostSeeder",
+      "CommentSeeder",
+    ]);
+  }
+}
+```
+
+## Working with Different Data Types
+
+### Embedded Documents
+
+Seed models with embedded documents:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+
+export default class UserWithProfileSeeder extends BaseSeeder {
+  async run() {
+    await User.createMany([
+      {
+        email: "john@example.com",
+        profile: {
+          firstName: "John",
+          lastName: "Doe",
+          bio: "Software developer with 5 years of experience.",
+          socialLinks: {
+            twitter: "@johndoe",
+            linkedin: "linkedin.com/in/johndoe",
+          },
+        },
+        addresses: [
+          {
+            type: "home",
+            street: "123 Main St",
+            city: "New York",
+            zipCode: "10001",
+          },
+          {
+            type: "work",
+            street: "456 Business Ave",
+            city: "New York",
+            zipCode: "10002",
+          },
+        ],
+      },
+    ]);
+  }
+}
+```
+
+### Referenced Relationships
+
+Seed models with proper references:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import Post from "#models/post";
+import Comment from "#models/comment";
+
+export default class BlogSeeder extends BaseSeeder {
+  async run() {
+    // Create users first
+    const users = await User.createMany([
+      { name: "Alice", email: "alice@example.com" },
+      { name: "Bob", email: "bob@example.com" },
+    ]);
+
+    // Create posts with user references
+    const posts = await Post.createMany([
+      {
+        title: "First Post",
+        content: "This is the first post.",
+        authorId: users[0]._id,
+      },
+      {
+        title: "Second Post",
+        content: "This is the second post.",
+        authorId: users[1]._id,
+      },
+    ]);
+
+    // Create comments with post and user references
+    await Comment.createMany([
+      {
+        content: "Great post!",
+        postId: posts[0]._id,
+        authorId: users[1]._id,
+      },
+      {
+        content: "Thanks for sharing!",
+        postId: posts[1]._id,
+        authorId: users[0]._id,
+      },
+    ]);
+  }
+}
+```
+
+## Connection-Specific Seeding
+
+### Multiple Database Connections
+
+Seed different databases using specific connections:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import AnalyticsEvent from "#models/analytics_event";
+
+export default class MultiConnectionSeeder extends BaseSeeder {
+  async run() {
+    // Seed main database
+    await User.createMany([
+      { name: "User 1", email: "user1@example.com" },
+      { name: "User 2", email: "user2@example.com" },
+    ]);
+
+    // Seed analytics database
+    await AnalyticsEvent.createMany([
+      {
+        eventType: "page_view",
+        userId: "user1_id",
+        metadata: { page: "/home" },
+      },
+      {
+        eventType: "button_click",
+        userId: "user2_id",
+        metadata: { button: "signup" },
+      },
+    ]);
+  }
+}
+```
+
+### Connection-Specific Seeder
+
+```bash
+# Run seeders only for analytics connection
+node ace odm:seed --connection=analytics
+```
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import AnalyticsEvent from "#models/analytics_event";
+
+export default class AnalyticsSeeder extends BaseSeeder {
+  // This seeder only runs for analytics connection
+  static connection = "analytics";
+
+  async run() {
+    await AnalyticsEvent.createMany([
+      {
+        eventType: "user_signup",
+        timestamp: new Date(),
+        metadata: { source: "web" },
+      },
+      {
+        eventType: "user_login",
+        timestamp: new Date(),
+        metadata: { source: "mobile" },
+      },
+    ]);
+  }
+}
+```
+
+## Error Handling and Validation
+
+### Graceful Error Handling
+
+Handle errors gracefully in your seeders:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import Logger from "@ioc:Adonis/Core/Logger";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    try {
+      // Check if users already exist
+      const existingUsers = await User.query().count();
+      if (existingUsers > 0) {
+        console.log("⚠️  Users already exist, skipping seeder");
+        return;
+      }
+
+      await User.createMany([
+        { name: "John Doe", email: "john@example.com" },
+        { name: "Jane Smith", email: "jane@example.com" },
+      ]);
+
+      console.log("✅ Users seeded successfully");
+    } catch (error) {
+      Logger.error("Failed to seed users:", error.message);
+      throw error; // Re-throw to stop seeding process
+    }
+  }
+}
+```
+
+### Data Validation
+
+Validate data before seeding:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import { schema, rules } from "@ioc:Adonis/Core/Validator";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    const userData = [
+      { name: "John Doe", email: "john@example.com", age: 30 },
+      { name: "Jane Smith", email: "jane@example.com", age: 25 },
+    ];
+
+    // Validate each user data
+    const userSchema = schema.create({
+      name: schema.string(),
+      email: schema.string({}, [rules.email()]),
+      age: schema.number([rules.range(18, 100)]),
+    });
+
+    for (const data of userData) {
+      try {
+        await request.validate({ schema: userSchema, data });
+        await User.create(data);
+      } catch (validationError) {
+        console.log(`❌ Invalid data for user: ${data.name}`);
+        console.log(validationError.messages);
+      }
+    }
+  }
+}
+```
+
+### Conditional Seeding
+
+Only seed when certain conditions are met:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import env from "#start/env";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    // Only run in development or testing
+    if (!["development", "testing"].includes(env.get("NODE_ENV"))) {
+      console.log("⚠️  Skipping UserSeeder in production environment");
+      return;
+    }
+
+    // Check if admin user already exists
+    const adminExists = await User.query().where("role", "admin").first();
+
+    if (adminExists) {
+      console.log("⚠️  Admin user already exists, skipping admin creation");
+    } else {
+      await User.create({
+        name: "Admin User",
+        email: "admin@example.com",
+        role: "admin",
+      });
+      console.log("✅ Admin user created");
+    }
+
+    // Seed regular users
+    await this.seedRegularUsers();
+  }
+
+  private async seedRegularUsers() {
+    const userCount = await User.query().where("role", "user").count();
+
+    if (userCount < 10) {
+      const usersToCreate = 10 - userCount;
+      const users = Array.from({ length: usersToCreate }, (_, i) => ({
+        name: `User ${userCount + i + 1}`,
+        email: `user${userCount + i + 1}@example.com`,
+        role: "user",
+      }));
+
+      await User.createMany(users);
+      console.log(`✅ Created ${usersToCreate} regular users`);
+    }
+  }
+}
+```
+
+## Best Practices
+
+### 1. Use Transactions for Data Integrity
+
+Wrap seeding operations in transactions:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import db from "adonis-odm/services/db";
+import User from "#models/user";
+import Post from "#models/post";
+
+export default class BlogSeeder extends BaseSeeder {
+  async run() {
+    await db.transaction(async (trx) => {
+      // Create users
+      const users = await User.createMany(
+        [
+          { name: "Alice", email: "alice@example.com" },
+          { name: "Bob", email: "bob@example.com" },
+        ],
+        { client: trx }
+      );
+
+      // Create posts
+      await Post.createMany(
+        [
+          {
+            title: "First Post",
+            content: "Content here",
+            authorId: users[0]._id,
+          },
+          {
+            title: "Second Post",
+            content: "More content",
+            authorId: users[1]._id,
+          },
+        ],
+        { client: trx }
+      );
+
+      console.log("✅ Blog data seeded successfully");
+    });
+  }
+}
+```
+
+### 2. Make Seeders Idempotent
+
+Ensure seeders can be run multiple times safely:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    // Use updateOrCreate to avoid duplicates
+    await User.updateOrCreate(
+      { email: "admin@example.com" },
+      {
+        name: "Admin User",
+        email: "admin@example.com",
+        role: "admin",
+      }
+    );
+
+    // Or check existence before creating
+    const users = [
+      { name: "John Doe", email: "john@example.com" },
+      { name: "Jane Smith", email: "jane@example.com" },
+    ];
+
+    for (const userData of users) {
+      const exists = await User.query().where("email", userData.email).first();
+
+      if (!exists) {
+        await User.create(userData);
+      }
+    }
+  }
+}
+```
+
+### 3. Use Factories for Complex Data
+
+Create factories for generating test data:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import { DateTime } from "luxon";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    // Create users using factory pattern
+    const users = await this.createUsers(50);
+    console.log(`✅ Created ${users.length} users`);
+  }
+
+  private async createUsers(count: number) {
+    const users = [];
+
+    for (let i = 1; i <= count; i++) {
+      users.push({
+        name: this.generateName(),
+        email: `user${i}@example.com`,
+        age: this.randomAge(),
+        isActive: Math.random() > 0.2, // 80% active
+        createdAt: this.randomDate(),
+      });
+    }
+
+    return await User.createMany(users);
+  }
+
+  private generateName(): string {
+    const firstNames = ["John", "Jane", "Alice", "Bob", "Charlie", "Diana"];
+    const lastNames = ["Doe", "Smith", "Johnson", "Brown", "Davis", "Wilson"];
+
+    const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+    const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+
+    return `${firstName} ${lastName}`;
+  }
+
+  private randomAge(): number {
+    return Math.floor(Math.random() * 50) + 18; // 18-67
+  }
+
+  private randomDate(): DateTime {
+    const daysAgo = Math.floor(Math.random() * 365);
+    return DateTime.now().minus({ days: daysAgo });
+  }
+}
+```
+
+### 4. Organize Seeders by Feature
+
+Structure your seeders logically:
+
+```
+database/
+  seeders/
+    main_seeder.ts
+    users/
+      user_seeder.ts
+      admin_seeder.ts
+    blog/
+      category_seeder.ts
+      post_seeder.ts
+      comment_seeder.ts
+    analytics/
+      event_seeder.ts
+```
+
+### 5. Use Environment Variables
+
+Make seeders configurable:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+import env from "#start/env";
+
+export default class UserSeeder extends BaseSeeder {
+  async run() {
+    const userCount = env.get("SEED_USER_COUNT", 10);
+    const adminEmail = env.get("ADMIN_EMAIL", "admin@example.com");
+
+    // Create admin
+    await User.updateOrCreate(
+      { email: adminEmail },
+      {
+        name: "Admin User",
+        email: adminEmail,
+        role: "admin",
+      }
+    );
+
+    // Create regular users
+    const users = Array.from({ length: userCount }, (_, i) => ({
+      name: `User ${i + 1}`,
+      email: `user${i + 1}@example.com`,
+      role: "user",
+    }));
+
+    await User.createMany(users);
+    console.log(`✅ Created ${userCount} users and 1 admin`);
+  }
+}
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Seeder Not Found
+
+If you get "Seeder not found" errors:
+
+1. **Check file location**: Ensure seeders are in `database/seeders/`
+2. **Verify file naming**: Use snake_case for file names (e.g., `user_seeder.ts`)
+3. **Check class export**: Ensure the seeder class is the default export
+
+```typescript
+// ✅ Correct
+export default class UserSeeder extends BaseSeeder {
+  // ...
+}
+
+// ❌ Incorrect
+export class UserSeeder extends BaseSeeder {
+  // ...
+}
+```
+
+#### Connection Errors
+
+If seeders fail to connect to MongoDB:
+
+1. **Check environment variables**: Verify `MONGO_CONNECTION_STRING` is set
+2. **Test connection**: Use `mongodb:status` command (when available)
+3. **Check MongoDB service**: Ensure MongoDB is running
+
+#### Duplicate Key Errors
+
+If you encounter duplicate key errors:
+
+1. **Make seeders idempotent**: Use `updateOrCreate` or check existence
+2. **Clear data first**: Drop collections before seeding in development
+3. **Use unique constraints**: Ensure proper unique indexes
+
+```typescript
+// Handle duplicates gracefully
+try {
+  await User.create(userData);
+} catch (error) {
+  if (error.code === 11000) {
+    // MongoDB duplicate key error
+    console.log(`User with email ${userData.email} already exists`);
+  } else {
+    throw error;
+  }
+}
+```
+
+### Performance Issues
+
+#### Large Dataset Seeding
+
+For seeding large amounts of data:
+
+```typescript
+import { BaseSeeder } from "adonis-odm";
+import User from "#models/user";
+
+export default class LargeUserSeeder extends BaseSeeder {
+  async run() {
+    const batchSize = 1000;
+    const totalUsers = 50000;
+
+    for (let i = 0; i < totalUsers; i += batchSize) {
+      const batch = Array.from(
+        { length: Math.min(batchSize, totalUsers - i) },
+        (_, j) => ({
+          name: `User ${i + j + 1}`,
+          email: `user${i + j + 1}@example.com`,
+        })
+      );
+
+      await User.createMany(batch);
+      console.log(
+        `✅ Created batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(totalUsers / batchSize)}`
+      );
+    }
+  }
+}
+```
+
+## Command Examples
+
+### Development Workflow
+
+```bash
+# Create and run a complete blog seeder setup
+node ace make:odm-seeder User
+node ace make:odm-seeder Category
+node ace make:odm-seeder Post
+node ace make:odm-seeder Comment
+
+# Run all seeders
+node ace odm:seed
+
+# Run specific seeders in order
+node ace odm:seed --files="./database/seeders/user_seeder.ts,./database/seeders/category_seeder.ts,./database/seeders/post_seeder.ts"
+```
+
+### Testing Environment
+
+```bash
+# Run seeders for testing database
+node ace odm:seed --connection=testing
+
+# Run specific test data seeders
+node ace odm:seed --files="./database/seeders/test_user_seeder.ts" --connection=testing
+```
+
+### Interactive Seeding
+
+```bash
+# Choose which seeders to run
+node ace odm:seed --interactive
+```
+
+This will present a menu like:
+
+```
+? Select seeders to run:
+❯ ◯ UserSeeder
+  ◯ CategorySeeder
+  ◯ PostSeeder
+  ◯ CommentSeeder
+  ◯ All seeders
+```
+
+## Next Steps
+
+Now that you understand Database Seeders:
+
+1. **[Learn about Testing](/docs/testing)** - Use seeders in your test suite
+2. **[Explore Transactions](/docs/transactions)** - Ensure data consistency
+3. **[Check Performance Tips](/docs/performance)** - Optimize your seeding operations
+4. **[Review Error Handling](/docs/error-handling)** - Handle seeding failures gracefully
+
+## Version Information
+
+Database Seeders were introduced in **Adonis ODM v0.2.0** with the following features:
+
+- ✅ Basic seeder creation and execution
+- ✅ Connection-specific seeding
+- ✅ Interactive seeder selection
+- ✅ Dependency management
+- 🔄 Database status commands (coming soon)
+- 🔄 Advanced seeder scheduling (planned)

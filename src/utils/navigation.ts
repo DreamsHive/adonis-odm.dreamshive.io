@@ -94,6 +94,11 @@ export const navigationSections: NavigationSection[] = [
         category: "Advanced Features",
       },
       {
+        title: "Database Seeders",
+        href: "/docs/seeders",
+        category: "Advanced Features",
+      },
+      {
         title: "Pagination",
         href: "/docs/pagination",
         category: "Advanced Features",
